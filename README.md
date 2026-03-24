@@ -6,7 +6,7 @@ This package runs a warm, low-latency prototype pipeline on Raspberry Pi/Linux:
 
 - STT: offline microphone speech-to-text with Vosk
 - CV: webcam + YOLO scene summary
-- LLM: local Ollama model `qwen2.5:1.5b` with `keep_alive`
+- LLM: local Ollama model `nova` with `keep_alive`
 - TTS: Piper HTTP server (primary), optional `espeak` fallback
 
 ## Folder Modules
@@ -44,9 +44,10 @@ Start Ollama (example):
 ollama serve
 ```
 
-Pull model if needed:
+Build custom model if needed:
 ```bash
 ollama pull qwen2.5:1.5b
+ollama create nova -f novafile
 ```
 
 `llm.py` keeps the model warm via `keep_alive` and calls `warm_llm()` at startup.
@@ -119,4 +120,3 @@ Open `config.py` and check:
 - If CV fails or is disabled, scene text is omitted.
 - If Piper HTTP fails, optional `espeak` fallback is used when enabled.
 - If TTS fails entirely, app continues running without crashing.
-

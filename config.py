@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "qwen2.5:1.5b"
+OLLAMA_MODEL = "nova"
 OLLAMA_KEEP_ALIVE = "15m"
 OLLAMA_TIMEOUT_SECONDS = 30
 
@@ -26,4 +26,3 @@ YOLO_MODEL_PATH = "yolo11n.pt"
 SPEECH_ENABLED = True
 CV_ENABLED = True
 STT_ENABLED = True
-
