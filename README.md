@@ -1,87 +1,122 @@
-# NOVA Testing (Chat + CV Scene to LLM)
+# NOVA Testing: Warm Multimodal Pipeline
 
-This test package provides two terminal modes:
-- Chat mode: send typed input to local Ollama (`qwen2.5:1.5b`) and optionally speak the response
-- CV scene test mode: capture webcam frames, run YOLO detections, build clean scene text, send scene text to Ollama, and optionally speak the response
+This package runs a warm, low-latency prototype pipeline on Raspberry Pi/Linux:
 
-Raw YOLO output is not sent directly to the LLM.  
-The model receives compact scene text such as: `I detect a person and a bottle.`
+`STT + CV -> LLM -> TTS`
 
-## Files
-- `main.py`: menu + mode orchestration
-- `llm.py`: Ollama API calls (`generate_response`, `generate_scene_response`)
-- `vision.py`: webcam capture, YOLO detection filtering, scene-text building
-- `speech.py`: Piper-first TTS (`python3 -m piper` + `aplay`) with optional `espeak` fallback
+- STT: offline microphone speech-to-text with Vosk
+- CV: webcam + YOLO scene summary
+- LLM: local Ollama model `qwen2.5:1.5b` with `keep_alive`
+- TTS: Piper HTTP server (primary), optional `espeak` fallback
+
+## Folder Modules
+- `config.py`: runtime settings in one place
+- `stt.py`: Vosk microphone recognition
+- `vision.py`: frame capture, YOLO detections, scene summary text
+- `llm.py`: Ollama calls, warmup, multimodal response generation
+- `speech.py`: Piper HTTP synthesis + playback
+- `main.py`: startup checks and runtime loop
+
+## Requirements
+- Python 3.10+
+- Linux/Raspberry Pi
+- Ollama running locally
+- Piper voice downloaded
+- Optional webcam and microphone
+
+## Python Packages
+```bash
+pip install vosk sounddevice ultralytics opencv-python
+pip install "piper-tts[http]"
+```
+
+## Linux Utilities
+```bash
+sudo apt update
+sudo apt install -y alsa-utils espeak
+```
+
+`alsa-utils` provides `aplay` and `arecord`.
+
+## Ollama Setup
+Start Ollama (example):
+```bash
+ollama serve
+```
+
+Pull model if needed:
+```bash
+ollama pull qwen2.5:1.5b
+```
+
+`llm.py` keeps the model warm via `keep_alive` and calls `warm_llm()` at startup.
+
+## Piper HTTP Setup
+Download voice:
+```bash
+python3 -m piper.download_voices en_US-lessac-medium
+```
+
+Start Piper HTTP server:
+```bash
+python3 -m piper.http_server -m en_US-lessac-medium
+```
+
+Default URL in config:
+`http://localhost:5000`
+
+## Vosk Model Setup
+1. Download a Vosk model (for example `vosk-model-small-en-us-0.15`) from the Vosk model list.
+2. Extract it in the `nova_testing` directory or another local path.
+3. Set `VOSK_MODEL_PATH` in `config.py` to that folder.
+
+## Microphone Device Checks
+List capture devices:
+```bash
+arecord -l
+```
+
+If needed, set `MIC_DEVICE_INDEX` in `config.py`.
 
 ## Run
 From inside `nova_testing`:
-
 ```bash
 python3 main.py
 ```
 
-Then choose:
-- `1` for terminal chat mode
-- `2` for CV scene test mode
+Runtime behavior:
+1. Warms Ollama
+2. Checks Piper HTTP availability
+3. Initializes STT if enabled
+4. Per turn: listen (or typed fallback), capture scene, call LLM, speak response
 
-## Configuration
-Edit constants at the top of `main.py`:
-- `SPEECH_ENABLED`: enable/disable spoken output
-- `CAMERA_INDEX`: webcam index (often `0`)
-- `CONFIDENCE_THRESHOLD`: low-confidence filter for detections
-- `FRAME_COUNT`: number of frames used in one CV test run
-- `YOLO_MODEL_PATH`: model file path (default `yolo11n.pt`)
+Type `exit` in typed fallback input to quit.
 
-## Raspberry Pi / Linux assumptions
-- Python 3
-- Ollama installed and running locally
-- Model available: `qwen2.5:1.5b`
-- OpenCV and Ultralytics available for vision mode
-- USB webcam accessible from the selected camera index
-- Piper installed (`piper-tts`) and `aplay` available
-- Optional fallback: `espeak`
+## Config Values To Edit First
+Open `config.py` and check:
+- `OLLAMA_URL`
+- `OLLAMA_MODEL`
+- `OLLAMA_KEEP_ALIVE`
+- `PIPER_HTTP_URL`
+- `PIPER_VOICE`
+- `VOSK_MODEL_PATH`
+- `MIC_DEVICE_INDEX`
+- `CAMERA_INDEX`
+- `CV_CONFIDENCE_THRESHOLD`
+- `SPEECH_ENABLED`
+- `CV_ENABLED`
+- `STT_ENABLED`
+- `OPTIONAL_LEADING_SILENCE_MS`
 
-## Install examples
-Primary TTS (Piper):
-```bash
-sudo apt update
-sudo apt install -y alsa-utils
-pip install piper-tts
-python3 -m piper.download_voices en_US-lessac-medium
-```
+## Known Limitations
+- Piper HTTP response format can vary by version; this code tries common endpoints/payloads.
+- If STT has noisy input, recognition quality can drop.
+- CV inference latency depends on Pi model, camera resolution, and YOLO variant.
+- This is a test harness; there is no persistent conversation memory.
 
-Optional fallback:
-```bash
-sudo apt install -y espeak
-```
+## Fallback Behavior
+- If STT fails or is disabled, typed terminal input is used.
+- If CV fails or is disabled, scene text is omitted.
+- If Piper HTTP fails, optional `espeak` fallback is used when enabled.
+- If TTS fails entirely, app continues running without crashing.
 
-Python vision dependencies (if needed):
-```bash
-pip install opencv-python ultralytics
-```
-
-## Verify Ollama
-```bash
-ollama list
-curl http://localhost:11434/api/tags
-ollama pull qwen2.5:1.5b
-```
-
-## Quick audio test
-Manual Piper test:
-```bash
-python3 -m piper -m en_US-lessac-medium -f test.wav -- "Hello, I am NOVA."
-aplay test.wav
-```
-
-## Speech behavior
-- `speech.py` uses Piper first via `python3 -m piper`.
-- It writes a temporary `.wav`, plays it with `aplay`, then removes the file.
-- If Piper fails and `ENABLE_ESPEAK_FALLBACK` is `True`, it tries `espeak`.
-- `speak_text(text)` returns `True` only on successful playback, otherwise `False`.
-
-## Change voice model
-Edit `PIPER_VOICE_MODEL` in `speech.py` (default: `en_US-lessac-medium`), then download that voice:
-```bash
-python3 -m piper.download_voices <voice-name>
-```

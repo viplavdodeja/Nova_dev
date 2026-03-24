@@ -1,94 +1,109 @@
-"""Local Ollama client for NOVA testing."""
+"""Ollama client for NOVA multimodal testing."""
 
 from __future__ import annotations
 
 import json
 from urllib import error, request
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "qwen2.5:1.5b"
-REQUEST_TIMEOUT_SECONDS = 30
+from config import OLLAMA_KEEP_ALIVE, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS, OLLAMA_URL
 
 CHAT_SYSTEM_PROMPT = (
-    "You are Nova, a friendly and witty robot assistant. "
-    "Reply naturally in 1-2 short sentences and stay concise."
+    "You are NOVA, a warm embodied robot assistant. "
+    "Reply naturally in 1-2 short sentences that sound good when spoken."
 )
 
-SCENE_SYSTEM_PROMPT = (
-    "You are NOVA, an embodied robot assistant. "
-    "Respond in one short natural sentence based only on what is in the scene. "
-    "Do not invent objects."
+MULTIMODAL_SYSTEM_PROMPT = (
+    "You are NOVA, a warm embodied robot assistant. "
+    "Respond briefly and naturally. "
+    "Use scene information only as provided and do not invent unseen objects."
 )
 
 
-def _call_ollama(prompt: str, num_predict: int = 60) -> str:
-    """Call Ollama generate API and return response text or error marker."""
+def _call_ollama(prompt: str, num_predict: int = 80) -> str:
+    """Call Ollama /api/generate with keep_alive and return text or error."""
     payload = {
-        "model": MODEL_NAME,
+        "model": OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
         "options": {
             "num_predict": num_predict,
-            "temperature": 0.7,
+            "temperature": 0.6,
             "top_p": 0.9,
             "repeat_penalty": 1.1,
         },
     }
 
-    data = json.dumps(payload).encode("utf-8")
     req = request.Request(
         OLLAMA_URL,
-        data=data,
+        data=json.dumps(payload).encode("utf-8"),
         method="POST",
         headers={"Content-Type": "application/json"},
     )
 
     try:
-        with request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        with request.urlopen(req, timeout=OLLAMA_TIMEOUT_SECONDS) as response:
             body = response.read().decode("utf-8")
     except error.URLError:
         return (
-            "[LLM ERROR] Could not reach Ollama at http://localhost:11434. "
-            "Make sure Ollama is running."
+            f"[LLM ERROR] Could not reach Ollama at {OLLAMA_URL}. "
+            "Make sure it is running."
         )
     except TimeoutError:
-        return "[LLM ERROR] Ollama request timed out. Try again."
+        return "[LLM ERROR] Ollama request timed out."
     except Exception as exc:
         return f"[LLM ERROR] Request failed: {exc}"
 
     try:
-        parsed = json.loads(body)
-        text = parsed.get("response", "").strip()
-        if not text:
-            return "[LLM ERROR] Ollama returned an empty response."
-        return text
+        data = json.loads(body)
     except json.JSONDecodeError:
         return "[LLM ERROR] Received malformed JSON from Ollama."
 
+    text = str(data.get("response", "")).strip()
+    if not text:
+        return "[LLM ERROR] Ollama returned an empty response."
+    return text
+
+
+def warm_llm() -> bool:
+    """Preload/warm the model so first user turn has lower latency."""
+    prompt = (
+        "You are NOVA. Reply with exactly: Ready."
+    )
+    response = _call_ollama(prompt, num_predict=8)
+    if response.startswith("[LLM ERROR]"):
+        print(response)
+        return False
+    print("[LLM] Warmed.")
+    return True
+
 
 def generate_response(user_text: str) -> str:
-    """Send user text to Ollama and return a model response string."""
-    cleaned_input = user_text.strip()
-    if not cleaned_input:
-        return "[LLM ERROR] Please provide a non-empty message."
+    """Generate a concise response for plain user text."""
+    cleaned = user_text.strip()
+    if not cleaned:
+        return "[LLM ERROR] Empty user input."
 
     prompt = (
         f"{CHAT_SYSTEM_PROMPT}\n"
-        f"User message: {cleaned_input}\n"
-        "Nova:"
+        f"User said: {cleaned}\n"
+        "NOVA:"
     )
     return _call_ollama(prompt, num_predict=80)
 
 
-def generate_scene_response(scene_text: str) -> str:
-    """Send a scene summary to Ollama and return a scene-grounded response."""
-    cleaned_scene = scene_text.strip()
-    if not cleaned_scene:
-        return "[LLM ERROR] Scene description is empty."
+def generate_multimodal_response(user_text: str, scene_text: str | None) -> str:
+    """Generate response from user speech/text and optional scene summary."""
+    cleaned_user = user_text.strip()
+    if not cleaned_user:
+        return "[LLM ERROR] Empty user input."
 
+    cleaned_scene = (scene_text or "Scene unavailable.").strip()
     prompt = (
-        f"{SCENE_SYSTEM_PROMPT}\n"
-        f"Scene: {cleaned_scene}\n"
+        f"{MULTIMODAL_SYSTEM_PROMPT}\n"
+        f"User said: {cleaned_user}\n"
+        f"Current scene: {cleaned_scene}\n"
         "NOVA:"
     )
-    return _call_ollama(prompt, num_predict=50)
+    return _call_ollama(prompt, num_predict=80)
+
