@@ -13,8 +13,8 @@ from config import (
     CHANNELS,
     MIC_DEVICE_INDEX,
     RECORD_SECONDS,
-    SAMPLE_RATE,
     SILENCE_RMS_THRESHOLD,
+    TARGET_SAMPLE_RATE,
     WHISPER_LANGUAGE,
     WHISPER_MODEL_NAME,
     WHISPER_TASK,
@@ -38,7 +38,39 @@ def list_input_devices() -> None:
     for index, device in enumerate(devices):
         max_input = int(device.get("max_input_channels", 0))
         if max_input > 0:
-            print(f"  [{index}] {device['name']} (inputs={max_input})")
+            default_sr = float(device.get("default_samplerate", 0.0))
+            print(f"  [{index}] {device['name']} (inputs={max_input}, default_sr={default_sr:.0f})")
+
+
+def resolve_input_sample_rate(device: int | None) -> int:
+    """Resolve a likely-valid input sample rate for the chosen device."""
+    if device is None:
+        default_device = sd.default.device
+        input_index = default_device[0] if isinstance(default_device, (list, tuple)) else default_device
+    else:
+        input_index = device
+
+    info = sd.query_devices(input_index, "input")
+    default_sr = int(round(float(info.get("default_samplerate", 0.0))))
+    if default_sr <= 0:
+        return TARGET_SAMPLE_RATE
+    return default_sr
+
+
+def resample_waveform(waveform: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
+    """Resample 1D waveform using linear interpolation."""
+    if src_rate == dst_rate or waveform.size == 0:
+        return waveform.astype(np.float32, copy=False)
+
+    src_len = waveform.shape[0]
+    dst_len = int(round(src_len * float(dst_rate) / float(src_rate)))
+    if dst_len <= 1:
+        return waveform.astype(np.float32, copy=False)
+
+    src_x = np.linspace(0.0, 1.0, num=src_len, endpoint=True)
+    dst_x = np.linspace(0.0, 1.0, num=dst_len, endpoint=True)
+    out = np.interp(dst_x, src_x, waveform).astype(np.float32, copy=False)
+    return out
 
 
 def record_clip(seconds: float, sample_rate: int, channels: int, device: int | None) -> np.ndarray:
@@ -77,10 +109,6 @@ def transcribe_clip(
     task: str,
 ) -> str:
     """Transcribe one waveform chunk with Whisper."""
-    if sample_rate != 16000:
-        # Whisper expects 16 kHz audio; keep defaults at 16k for best behavior.
-        raise ValueError("Whisper mic test expects SAMPLE_RATE=16000.")
-
     result = model.transcribe(
         waveform,
         language=language,
@@ -102,6 +130,9 @@ def run() -> None:
     print(f"[Whisper] Loading model: {args.model}")
     model = whisper.load_model(args.model)
     print("[Whisper] Ready.")
+    input_sample_rate = resolve_input_sample_rate(args.device)
+    print(f"[Mic] Using input sample rate: {input_sample_rate} Hz")
+    print(f"[Whisper] Target sample rate: {TARGET_SAMPLE_RATE} Hz")
     print("Press Ctrl+C to stop.\n")
 
     while True:
@@ -109,20 +140,25 @@ def run() -> None:
             print(f"[Mic] Recording {args.seconds:.1f}s...")
             waveform = record_clip(
                 seconds=args.seconds,
-                sample_rate=SAMPLE_RATE,
+                sample_rate=input_sample_rate,
                 channels=CHANNELS,
                 device=args.device,
             )
+            whisper_waveform = resample_waveform(
+                waveform=waveform,
+                src_rate=input_sample_rate,
+                dst_rate=TARGET_SAMPLE_RATE,
+            )
 
-            level = rms_level(waveform)
+            level = rms_level(whisper_waveform)
             if level < SILENCE_RMS_THRESHOLD:
                 print(f"[Mic] Silence/low input (RMS={level:.4f}).")
                 continue
 
             text = transcribe_clip(
                 model=model,
-                waveform=waveform,
-                sample_rate=SAMPLE_RATE,
+                waveform=whisper_waveform,
+                sample_rate=TARGET_SAMPLE_RATE,
                 language=WHISPER_LANGUAGE,
                 task=WHISPER_TASK,
             )

@@ -34,6 +34,6 @@ python3 main.py --model small.en
 ```
 
 ## Notes
-- Default sample rate is `16000` for Whisper compatibility.
+- Recorder now uses your device default sample rate automatically, then resamples to `16000` for Whisper.
 - First run may take time while model weights download.
 - If recognition is too sensitive or not sensitive enough, tune `SILENCE_RMS_THRESHOLD` in `config.py`.
