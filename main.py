@@ -1,106 +1,107 @@
-"""Main runtime loop for NOVA multimodal prototype."""
+"""Main runtime loop for NOVA vision -> LLM -> Piper speech."""
 
 from __future__ import annotations
+
+import queue
+import threading
+import time
 
 from config import (
     CV_CONFIDENCE_THRESHOLD,
     CV_ENABLED,
+    FRAME_SAMPLE_COUNT,
+    FRAME_SAMPLE_INTERVAL_SECONDS,
+    MAX_PENDING_TTS_RESPONSES,
+    PIPELINE_LOOP_DELAY_SECONDS,
     SPEECH_ENABLED,
-    STT_ENABLED,
 )
-from llm import generate_multimodal_response, warm_llm
+from llm import generate_scene_response, warm_llm
 from speech import speak_text, warm_tts
-from stt import STTRecognizer, create_recognizer
-from vision import get_scene_text
+from vision import get_scene_text_burst
 
 
-def _read_terminal_input() -> str | None:
-    """Read fallback terminal input."""
-    try:
-        text = input("You (typed): ").strip()
-    except (EOFError, KeyboardInterrupt):
-        return "exit"
-    return text or None
+def _replace_queue_item(target_queue: queue.Queue[str], value: str) -> None:
+    """Keep only the newest queued item to avoid speech backlog."""
+    while True:
+        try:
+            target_queue.get_nowait()
+        except queue.Empty:
+            break
+    target_queue.put_nowait(value)
 
 
-def _initialize_stt() -> STTRecognizer | None:
-    """Create STT recognizer when enabled."""
-    if not STT_ENABLED:
-        print("[STT] Disabled.")
-        return None
-    try:
-        recognizer = create_recognizer()
-        print("[STT] Ready.")
-        return recognizer
-    except Exception as exc:
-        print(f"[STT] Initialization failed: {exc}")
-        return None
-
-
-def _get_user_text(stt_recognizer: STTRecognizer | None) -> str | None:
-    """Get user text from STT when possible, otherwise terminal input."""
-    if stt_recognizer is not None:
-        print("\nListening...")
-        spoken_text = stt_recognizer.listen_for_utterance()
-        if spoken_text:
-            print(f"You (spoken): {spoken_text}")
-            return spoken_text
-        print("[STT] No clear utterance detected.")
-    return _read_terminal_input()
-
-
-def _get_scene_text() -> str | None:
-    """Fetch current scene summary from vision pipeline."""
-    if not CV_ENABLED:
-        return None
-    try:
-        scene_text, detections = get_scene_text(confidence_threshold=CV_CONFIDENCE_THRESHOLD)
-        print(f"[CV] Detections: {detections if detections else '[]'}")
-        print(f"[CV] Scene: {scene_text}")
-        return scene_text
-    except Exception as exc:
-        print(f"[CV] Failed: {exc}")
-        return None
+def _speech_worker(target_queue: queue.Queue[str], stop_event: threading.Event) -> None:
+    """Speak responses asynchronously until stop requested."""
+    while not stop_event.is_set():
+        try:
+            text = target_queue.get(timeout=0.2)
+        except queue.Empty:
+            continue
+        if not text:
+            continue
+        if not speak_text(text):
+            print("[TTS] Speech output failed.")
 
 
 def run() -> None:
-    """Run NOVA multimodal loop: STT + CV -> LLM -> TTS."""
-    print("NOVA multimodal test shell")
-    print("Pipeline: STT + CV -> LLM -> TTS")
-    print("Type 'exit' in typed fallback input to quit.\n")
+    """Run continuous loop: capture burst -> summarize -> LLM -> speak."""
+    print("NOVA continuous vision shell")
+    print("Pipeline: 3 frames (1/sec) -> scene summary -> LLM -> Piper speech")
+    print("Press Ctrl+C to quit.\n")
+
+    if not CV_ENABLED:
+        print("[CV] Disabled in config; this mode requires CV_ENABLED=True.")
+        return
 
     warm_llm()
     if SPEECH_ENABLED:
         warm_tts()
 
-    stt_recognizer = _initialize_stt()
-    if STT_ENABLED and stt_recognizer is None:
-        print("[STT] Falling back to terminal input.")
+    speech_queue: queue.Queue[str] = queue.Queue(maxsize=max(1, MAX_PENDING_TTS_RESPONSES))
+    stop_event = threading.Event()
+    speech_thread: threading.Thread | None = None
 
-    while True:
-        try:
-            user_text = _get_user_text(stt_recognizer)
-            if not user_text:
-                continue
-            if user_text.lower() in {"exit", "quit"}:
-                print("Exiting NOVA.")
-                break
+    if SPEECH_ENABLED:
+        speech_thread = threading.Thread(
+            target=_speech_worker,
+            args=(speech_queue, stop_event),
+            daemon=True,
+            name="speech-worker",
+        )
+        speech_thread.start()
 
-            scene_text = _get_scene_text()
-            response = generate_multimodal_response(user_text, scene_text)
+    try:
+        while True:
+            cycle_start = time.time()
+
+            scene_text, per_frame_detections, aggregated = get_scene_text_burst(
+                frame_count=FRAME_SAMPLE_COUNT,
+                interval_seconds=FRAME_SAMPLE_INTERVAL_SECONDS,
+                confidence_threshold=CV_CONFIDENCE_THRESHOLD,
+            )
+
+            frame_counts = [len(frame) for frame in per_frame_detections]
+            print(f"[CV] Frame detections: {frame_counts}")
+            print(f"[CV] Burst summary: {scene_text}")
+            if aggregated:
+                print(f"[CV] Aggregated: {aggregated}")
+
+            response = generate_scene_response(scene_text)
             print(f"Nova: {response}\n")
 
-            if response.startswith("[LLM ERROR]"):
-                continue
-            if SPEECH_ENABLED and not speak_text(response):
-                print("[TTS] Speech output failed.\n")
-        except KeyboardInterrupt:
-            print("\nExiting NOVA.")
-            break
-        except Exception as exc:
-            print(f"[MAIN] Unexpected runtime error: {exc}")
+            if not response.startswith("[LLM ERROR]") and SPEECH_ENABLED:
+                _replace_queue_item(speech_queue, response)
+
+            elapsed = time.time() - cycle_start
+            if PIPELINE_LOOP_DELAY_SECONDS > elapsed:
+                time.sleep(PIPELINE_LOOP_DELAY_SECONDS - elapsed)
+    except KeyboardInterrupt:
+        print("\nExiting NOVA.")
+    finally:
+        stop_event.set()
+        if speech_thread is not None:
+            speech_thread.join(timeout=2)
 
 
 if __name__ == "__main__":
     run()
-

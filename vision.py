@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections import defaultdict
 
 from config import CAMERA_INDEX, CV_CONFIDENCE_THRESHOLD, YOLO_MODEL_PATH
@@ -41,6 +42,35 @@ def capture_frame(camera_index: int = CAMERA_INDEX):
     ok, frame = cap.read()
     cap.release()
     return frame if ok else None
+
+
+def capture_frame_burst(
+    frame_count: int,
+    interval_seconds: float,
+    camera_index: int = CAMERA_INDEX,
+) -> list:
+    """Capture a sequence of frames with a fixed delay between captures."""
+    if frame_count <= 0:
+        return []
+    if cv2 is None:
+        raise RuntimeError("opencv-python is not installed.")
+
+    frames = []
+    cap = cv2.VideoCapture(camera_index)
+    if not cap.isOpened():
+        cap.release()
+        return frames
+
+    try:
+        for index in range(frame_count):
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                frames.append(frame)
+            if index < frame_count - 1 and interval_seconds > 0:
+                time.sleep(interval_seconds)
+    finally:
+        cap.release()
+    return frames
 
 
 def detect_objects(
@@ -86,6 +116,37 @@ def _deduplicate_detections(detections: list[dict]) -> list[dict]:
     return merged
 
 
+def aggregate_burst_detections(per_frame_detections: list[list[dict]]) -> list[dict]:
+    """Merge detections across multiple frames and track frame frequency."""
+    frame_hits: dict[str, int] = defaultdict(int)
+    best_confidence: dict[str, float] = defaultdict(float)
+
+    for frame_detections in per_frame_detections:
+        labels_in_frame: set[str] = set()
+        for item in frame_detections:
+            label = str(item.get("label", "")).strip().lower()
+            if not label:
+                continue
+            labels_in_frame.add(label)
+            confidence = float(item.get("confidence", 0.0))
+            if confidence > best_confidence[label]:
+                best_confidence[label] = confidence
+        for label in labels_in_frame:
+            frame_hits[label] += 1
+
+    merged = []
+    for label, hits in frame_hits.items():
+        merged.append(
+            {
+                "label": label,
+                "confidence": round(best_confidence[label], 2),
+                "frames_seen": hits,
+            }
+        )
+    merged.sort(key=lambda d: (-d["frames_seen"], -d["confidence"], d["label"]))
+    return merged
+
+
 def build_scene_text(detections: list[dict]) -> str:
     """Build a clean sentence summary for LLM input."""
     if not detections:
@@ -103,6 +164,31 @@ def build_scene_text(detections: list[dict]) -> str:
     return f"I detect {joined}."
 
 
+def build_burst_scene_text(detections: list[dict], total_frames: int) -> str:
+    """Build scene summary from detections accumulated over multiple frames."""
+    if not detections or total_frames <= 0:
+        return "I do not detect any clear objects in the recent frames."
+
+    parts = []
+    for item in detections:
+        label = str(item.get("label", "")).strip()
+        if not label:
+            continue
+        frames_seen = int(item.get("frames_seen", 0))
+        parts.append(f"{label} ({frames_seen}/{total_frames} frames)")
+
+    if not parts:
+        return "I do not detect any clear objects in the recent frames."
+
+    if len(parts) == 1:
+        joined = parts[0]
+    elif len(parts) == 2:
+        joined = f"{parts[0]} and {parts[1]}"
+    else:
+        joined = ", ".join(parts[:-1]) + f", and {parts[-1]}"
+    return f"In the last {total_frames} frames, I detected {joined}."
+
+
 def get_scene_text(
     camera_index: int = CAMERA_INDEX,
     confidence_threshold: float = CV_CONFIDENCE_THRESHOLD,
@@ -117,3 +203,30 @@ def get_scene_text(
     )
     return build_scene_text(detections), detections
 
+
+def get_scene_text_burst(
+    frame_count: int,
+    interval_seconds: float,
+    camera_index: int = CAMERA_INDEX,
+    confidence_threshold: float = CV_CONFIDENCE_THRESHOLD,
+    model_path: str = YOLO_MODEL_PATH,
+) -> tuple[str, list[list[dict]], list[dict]]:
+    """Capture frame burst, detect objects for each frame, and summarize."""
+    frames = capture_frame_burst(
+        frame_count=frame_count,
+        interval_seconds=interval_seconds,
+        camera_index=camera_index,
+    )
+
+    per_frame_detections: list[list[dict]] = []
+    for frame in frames:
+        detections = detect_objects(
+            frame,
+            confidence_threshold=confidence_threshold,
+            model_path=model_path,
+        )
+        per_frame_detections.append(detections)
+
+    aggregated = aggregate_burst_detections(per_frame_detections)
+    scene_text = build_burst_scene_text(aggregated, total_frames=max(len(frames), frame_count))
+    return scene_text, per_frame_detections, aggregated

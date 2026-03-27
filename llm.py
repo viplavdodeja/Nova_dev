@@ -18,6 +18,13 @@ MULTIMODAL_SYSTEM_PROMPT = (
     "Use scene information only as provided and do not invent unseen objects."
 )
 
+SCENE_ONLY_SYSTEM_PROMPT = (
+    "You are NOVA, a warm embodied robot assistant narrating camera observations. "
+    "Respond in 1-2 short spoken sentences. "
+    "Do not mention uncertainty handling or internal processing details. "
+    "Only describe what is in the provided scene summary."
+)
+
 
 def _call_ollama(prompt: str, num_predict: int = 80) -> str:
     """Call Ollama /api/generate with keep_alive and return text or error."""
@@ -107,3 +114,13 @@ def generate_multimodal_response(user_text: str, scene_text: str | None) -> str:
     )
     return _call_ollama(prompt, num_predict=80)
 
+
+def generate_scene_response(scene_text: str | None) -> str:
+    """Generate spoken response from scene-only summary text."""
+    cleaned_scene = (scene_text or "Scene unavailable.").strip()
+    prompt = (
+        f"{SCENE_ONLY_SYSTEM_PROMPT}\n"
+        f"Current scene summary: {cleaned_scene}\n"
+        "NOVA:"
+    )
+    return _call_ollama(prompt, num_predict=80)
