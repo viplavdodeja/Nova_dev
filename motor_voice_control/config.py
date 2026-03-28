@@ -21,8 +21,8 @@ ARECORD_CHANNELS = 1
 ARECORD_FORMAT = "S16_LE"
 
 # whisper.cpp paths (update these on the Pi).
-WHISPER_EXECUTABLE_PATH = "/home/pi/whisper.cpp/build/bin/whisper-cli"
-WHISPER_MODEL_PATH = "/home/pi/whisper.cpp/models/ggml-base.en.bin"
+WHISPER_EXECUTABLE_PATH = "/home/novarobot/whisper.cpp/build/bin/whisper-cli"
+WHISPER_MODEL_PATH = "/home/novarobot/whisper.cpp/models/ggml-tiny.en.bin"
 WHISPER_LANGUAGE = "en"
 
 # Temporary audio directory used for WAV chunks.
