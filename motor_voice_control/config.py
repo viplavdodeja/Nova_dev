@@ -21,7 +21,7 @@ WAKE_REQUIRED_HITS = 1
 # arecord microphone settings.
 # Use plughw for more stable sample-rate conversion on Raspberry Pi USB mics.
 # Update this to match your capture card/device from `arecord -l`.
-ARECORD_DEVICE = "plughw:1,0"
+ARECORD_DEVICE = "plughw:CARD=ATR4650USB,DEV=0"
 ARECORD_SAMPLE_RATE = 16000
 ARECORD_CHANNELS = 1
 ARECORD_FORMAT = "S16_LE"
