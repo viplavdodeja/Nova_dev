@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import math
 from pathlib import Path
 from uuid import uuid4
 
@@ -40,6 +41,8 @@ class WhisperCppListener:
 
     def record_audio(self, output_path: Path, duration_seconds: float) -> bool:
         """Record one WAV chunk with arecord."""
+        # arecord expects an integer duration for -d on many Linux builds.
+        duration_whole_seconds = max(1, int(math.ceil(float(duration_seconds))))
         cmd = [
             "arecord",
             "-D",
@@ -51,7 +54,7 @@ class WhisperCppListener:
             "-c",
             str(ARECORD_CHANNELS),
             "-d",
-            str(duration_seconds),
+            str(duration_whole_seconds),
             "-q",
             str(output_path),
         ]

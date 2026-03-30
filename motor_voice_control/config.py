@@ -11,8 +11,8 @@ SERIAL_TIMEOUT_SECONDS = 1.0
 
 # Wake phrase and clip durations.
 WAKE_PHRASE = "hey nova"
-PASSIVE_CLIP_DURATION_SECONDS = 2.5
-COMMAND_CLIP_DURATION_SECONDS = 2.5
+PASSIVE_CLIP_DURATION_SECONDS = 3.0
+COMMAND_CLIP_DURATION_SECONDS = 3.0
 
 # arecord microphone settings.
 ARECORD_DEVICE = "default"  # Example: "hw:1,0" if needed
