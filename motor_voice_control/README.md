@@ -20,6 +20,11 @@ No Arduino code, no TTS, no UI, no LLM.
 - `S` = spin (also used for passive emergency stop trigger)
 - `X` = emergency stop command-mode mapping
 
+## LED State Messages
+The Pi also sends LED state tokens to Arduino:
+- `LED_STOP` in passive listening mode (orange)
+- `LED_MOVE` while waiting for command input (green)
+
 ## Project Files
 - `main.py`: app loop (passive mode + command mode)
 - `speech_listener.py`: recording + whisper.cpp transcription
@@ -55,13 +60,21 @@ List capture devices:
 arecord -l
 ```
 
-If needed, set `ARECORD_DEVICE` in `config.py` (example: `hw:1,0`).
+Set `ARECORD_DEVICE` in `config.py` to a stable capture target, typically:
+- `plughw:1,0` (recommended for USB mics on Pi)
+- `hw:1,0` (raw hardware device)
 
 ## Verify whisper.cpp Manually
 Record a quick sample:
 
 ```bash
 arecord -D default -f S16_LE -r 16000 -c 1 -d 3 test.wav
+```
+
+Recommended stable format/device test:
+
+```bash
+arecord -D plughw:1,0 -f S16_LE -r 16000 -c 1 -d 3 test.wav
 ```
 
 Run whisper.cpp manually:
@@ -112,6 +125,7 @@ Typical output includes:
 - Passive mode always listens for `"stop"` and sends `S` immediately.
 - Passive mode listens for wake phrase `"hey nova"`.
 - Wake phrase matching handles punctuation variants such as `hey, nova`.
+- Passive mode uses phrase buffering across chunks (`previous + current`) to catch split phrases.
 - After wake phrase, one command clip is recorded and parsed.
 - Command mode can use grammar-constrained decoding for better command accuracy.
 - Command mode supports:

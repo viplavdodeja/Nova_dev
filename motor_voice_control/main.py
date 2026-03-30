@@ -19,6 +19,9 @@ from config import (
 from motor_serial import MotorController
 from speech_listener import WhisperCppListener
 
+LED_PASSIVE = "LED_STOP"
+LED_COMMAND = "LED_MOVE"
+
 
 def run() -> None:
     """Run passive listening and command mode loops."""
@@ -35,31 +38,38 @@ def run() -> None:
     )
     if not motor.connect():
         return
+    motor.set_led_state(LED_PASSIVE)
 
     print("Voice motor control started")
     print("Passive listening mode active")
     print("Press Ctrl+C to stop\n")
     wake_hits = 0
+    previous_passive_text = ""
 
     try:
         while True:
-            passive_text = normalize_text(
+            current_passive_text = normalize_text(
                 listener.listen_once(
                     PASSIVE_CLIP_DURATION_SECONDS,
                     command_mode=False,
                 )
             )
-            if passive_text:
-                print(f"Heard (passive): {passive_text}")
+            if current_passive_text:
+                print(f"Heard (passive): {current_passive_text}")
+
+            combined_passive_text = normalize_text(
+                f"{previous_passive_text} {current_passive_text}".strip()
+            )
 
             # Emergency stop has highest priority in passive mode.
-            if contains_emergency_stop(passive_text):
+            if contains_emergency_stop(combined_passive_text):
                 print("Emergency stop detected")
                 motor.send_command("S")
                 wake_hits = 0
+                previous_passive_text = ""
                 continue
 
-            if contains_wake_phrase(passive_text):
+            if contains_wake_phrase(combined_passive_text):
                 wake_hits += 1
                 print(f"Wake phrase detected: hey nova ({wake_hits}/{WAKE_REQUIRED_HITS})")
             else:
@@ -67,6 +77,8 @@ def run() -> None:
 
             if wake_hits >= WAKE_REQUIRED_HITS:
                 wake_hits = 0
+                previous_passive_text = ""
+                motor.set_led_state(LED_COMMAND)
                 print("Listening for command...")
                 command_text = normalize_text(
                     listener.listen_once(
@@ -80,14 +92,23 @@ def run() -> None:
                 parsed = parse_motor_command(command_text)
                 if parsed is None:
                     print("No valid command recognized")
+                    motor.set_led_state(LED_PASSIVE)
+                    previous_passive_text = ""
                     continue
 
                 phrase, letter = parsed
                 print(f"Command recognized: {phrase}")
                 motor.send_command(letter)
+                motor.set_led_state(LED_PASSIVE)
+                previous_passive_text = ""
+                continue
+
+            # Keep one-step memory only; clear if no speech this chunk.
+            previous_passive_text = current_passive_text if current_passive_text else ""
     except KeyboardInterrupt:
         print("\nShutting down voice motor control")
     finally:
+        motor.set_led_state(LED_PASSIVE)
         motor.close()
 
 

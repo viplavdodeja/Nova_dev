@@ -31,19 +31,28 @@ class MotorController:
 
     def send_command(self, letter: str) -> bool:
         """Send a single-letter command over serial."""
+        command = letter.strip().upper()[:1]
+        return self.send_message(command)
+
+    def send_message(self, message: str) -> bool:
+        """Send an arbitrary serial line message."""
         if self._serial_connection is None or not self._serial_connection.is_open:
             print("Serial send failed: not connected")
             return False
 
-        payload = (letter.strip().upper()[:1] + "\n").encode("utf-8")
+        payload = (message.strip() + "\n").encode("utf-8")
         try:
             self._serial_connection.write(payload)
             self._serial_connection.flush()
-            print(f"Sent to Arduino: {letter.strip().upper()[:1]}")
+            print(f"Sent to Arduino: {message.strip()}")
             return True
         except Exception as exc:
             print(f"Serial write error: {exc}")
             return False
+
+    def set_led_state(self, led_state: str) -> bool:
+        """Send LED state token to Arduino."""
+        return self.send_message(led_state.strip().upper())
 
     def close(self) -> None:
         """Close serial connection when done."""

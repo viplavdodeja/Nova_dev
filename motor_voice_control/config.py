@@ -11,15 +11,17 @@ SERIAL_TIMEOUT_SECONDS = 1.0
 
 # Wake phrase and clip durations.
 WAKE_PHRASE = "hey nova"
-PASSIVE_CLIP_DURATION_SECONDS = 2.0
-COMMAND_CLIP_DURATION_SECONDS = 4.0
+PASSIVE_CLIP_DURATION_SECONDS = 4.0
+COMMAND_CLIP_DURATION_SECONDS = 3.0
 
 # Require N wake detections before entering command mode.
 # Set to 2 for fewer false wakes in noisy spaces.
 WAKE_REQUIRED_HITS = 1
 
 # arecord microphone settings.
-ARECORD_DEVICE = "default"  # Example: "hw:1,0" if needed
+# Use plughw for more stable sample-rate conversion on Raspberry Pi USB mics.
+# Update this to match your capture card/device from `arecord -l`.
+ARECORD_DEVICE = "plughw:1,0"
 ARECORD_SAMPLE_RATE = 16000
 ARECORD_CHANNELS = 1
 ARECORD_FORMAT = "S16_LE"
