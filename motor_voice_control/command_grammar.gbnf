@@ -1,0 +1,16 @@
+root ::= command
+
+command ::= "forward"
+         | "go forward"
+         | "move forward"
+         | "backward"
+         | "go backward"
+         | "move backward"
+         | "back"
+         | "reverse"
+         | "left"
+         | "turn left"
+         | "right"
+         | "turn right"
+         | "stop"
+         | "spin"

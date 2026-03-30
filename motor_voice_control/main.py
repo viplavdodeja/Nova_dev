@@ -14,6 +14,7 @@ from config import (
     PASSIVE_CLIP_DURATION_SECONDS,
     SERIAL_PORT,
     SERIAL_TIMEOUT_SECONDS,
+    WAKE_REQUIRED_HITS,
 )
 from motor_serial import MotorController
 from speech_listener import WhisperCppListener
@@ -38,10 +39,16 @@ def run() -> None:
     print("Voice motor control started")
     print("Passive listening mode active")
     print("Press Ctrl+C to stop\n")
+    wake_hits = 0
 
     try:
         while True:
-            passive_text = normalize_text(listener.listen_once(PASSIVE_CLIP_DURATION_SECONDS))
+            passive_text = normalize_text(
+                listener.listen_once(
+                    PASSIVE_CLIP_DURATION_SECONDS,
+                    command_mode=False,
+                )
+            )
             if passive_text:
                 print(f"Heard (passive): {passive_text}")
 
@@ -49,12 +56,24 @@ def run() -> None:
             if contains_emergency_stop(passive_text):
                 print("Emergency stop detected")
                 motor.send_command("S")
+                wake_hits = 0
                 continue
 
             if contains_wake_phrase(passive_text):
-                print("Wake phrase detected: hey nova")
+                wake_hits += 1
+                print(f"Wake phrase detected: hey nova ({wake_hits}/{WAKE_REQUIRED_HITS})")
+            else:
+                wake_hits = 0
+
+            if wake_hits >= WAKE_REQUIRED_HITS:
+                wake_hits = 0
                 print("Listening for command...")
-                command_text = normalize_text(listener.listen_once(COMMAND_CLIP_DURATION_SECONDS))
+                command_text = normalize_text(
+                    listener.listen_once(
+                        COMMAND_CLIP_DURATION_SECONDS,
+                        command_mode=True,
+                    )
+                )
                 if command_text:
                     print(f"Heard (command): {command_text}")
 

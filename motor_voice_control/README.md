@@ -79,10 +79,14 @@ Edit these in `config.py`:
 - `SERIAL_PORT` (default `/dev/ttyUSB0`)
 - `BAUD_RATE` (default `9600`)
 - `WAKE_PHRASE` (default `hey nova`)
+- `WAKE_REQUIRED_HITS` (set `2` to reduce false wake triggers)
 - `PASSIVE_CLIP_DURATION_SECONDS`
 - `COMMAND_CLIP_DURATION_SECONDS`
 - `WHISPER_EXECUTABLE_PATH`
 - `WHISPER_MODEL_PATH`
+- `WHISPER_THREADS`
+- `ENABLE_PASSIVE_VAD` / `WHISPER_VAD_MODEL_PATH`
+- `ENABLE_COMMAND_GRAMMAR` / `COMMAND_GRAMMAR_PATH`
 - `TEMP_AUDIO_DIR`
 
 ## Run the App
@@ -107,7 +111,9 @@ Typical output includes:
 ## Behavior Summary
 - Passive mode always listens for `"stop"` and sends `S` immediately.
 - Passive mode listens for wake phrase `"hey nova"`.
+- Wake phrase matching handles punctuation variants such as `hey, nova`.
 - After wake phrase, one command clip is recorded and parsed.
+- Command mode can use grammar-constrained decoding for better command accuracy.
 - Command mode supports:
   - `forward -> F`
   - `backward/back/reverse -> B`

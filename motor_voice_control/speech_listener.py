@@ -14,10 +14,16 @@ from config import (
     ARECORD_DEVICE,
     ARECORD_FORMAT,
     ARECORD_SAMPLE_RATE,
+    COMMAND_GRAMMAR_PATH,
+    ENABLE_COMMAND_GRAMMAR,
+    ENABLE_PASSIVE_VAD,
     TEMP_AUDIO_DIR,
     WHISPER_EXECUTABLE_PATH,
     WHISPER_LANGUAGE,
     WHISPER_MODEL_PATH,
+    WHISPER_THREADS,
+    WHISPER_VAD_MODEL_PATH,
+    WHISPER_VAD_THRESHOLD,
 )
 
 
@@ -73,8 +79,8 @@ class WhisperCppListener:
             return False
         return output_path.exists()
 
-    def transcribe_audio(self, audio_path: Path) -> str:
-        """Transcribe a WAV file via whisper.cpp CLI."""
+    def _build_whisper_command(self, audio_path: Path, command_mode: bool, use_grammar: bool = True) -> list[str]:
+        """Build whisper.cpp command with mode-specific options."""
         cmd = [
             str(self.whisper_executable),
             "-m",
@@ -83,16 +89,48 @@ class WhisperCppListener:
             str(audio_path),
             "-l",
             WHISPER_LANGUAGE,
+            "-t",
+            str(WHISPER_THREADS),
             "--no-timestamps",
             "--print-progress",
             "false",
+            "--no-prints",
         ]
+
+        if not command_mode and ENABLE_PASSIVE_VAD:
+            cmd.append("--vad")
+            if WHISPER_VAD_MODEL_PATH:
+                vad_path = Path(WHISPER_VAD_MODEL_PATH)
+                if vad_path.exists():
+                    cmd.extend(["--vad-model", str(vad_path)])
+            cmd.extend(["--vad-threshold", str(WHISPER_VAD_THRESHOLD)])
+
+        if command_mode and use_grammar and ENABLE_COMMAND_GRAMMAR and COMMAND_GRAMMAR_PATH.exists():
+            cmd.extend(["--grammar", str(COMMAND_GRAMMAR_PATH)])
+
+        return cmd
+
+    def transcribe_audio(self, audio_path: Path, command_mode: bool = False) -> str:
+        """Transcribe a WAV file via whisper.cpp CLI."""
+        cmd = self._build_whisper_command(audio_path=audio_path, command_mode=command_mode)
 
         try:
             result = subprocess.run(cmd, check=False, capture_output=True, text=True)
         except Exception as exc:
             print(f"whisper.cpp execution failure: {exc}")
             return ""
+
+        # If grammar causes a failure, retry once without grammar.
+        if result.returncode != 0 and command_mode and ENABLE_COMMAND_GRAMMAR:
+            fallback_cmd = self._build_whisper_command(
+                audio_path=audio_path,
+                command_mode=True,
+                use_grammar=False,
+            )
+            try:
+                result = subprocess.run(fallback_cmd, check=False, capture_output=True, text=True)
+            except Exception:
+                pass
 
         if result.returncode != 0:
             err = (result.stderr or "").strip()
@@ -102,7 +140,7 @@ class WhisperCppListener:
         transcript = self._extract_transcript(result.stdout)
         return transcript.lower().strip()
 
-    def listen_once(self, duration_seconds: float) -> str:
+    def listen_once(self, duration_seconds: float, command_mode: bool = False) -> str:
         """Record and transcribe one short clip, then return transcript."""
         self.audio_dir.mkdir(parents=True, exist_ok=True)
         file_name = f"clip_{uuid4().hex}.wav"
@@ -111,7 +149,7 @@ class WhisperCppListener:
         if not self.record_audio(wav_path, duration_seconds):
             return ""
 
-        transcript = self.transcribe_audio(wav_path)
+        transcript = self.transcribe_audio(wav_path, command_mode=command_mode)
         return transcript
 
     @staticmethod

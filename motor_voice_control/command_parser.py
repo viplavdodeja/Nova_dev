@@ -6,6 +6,8 @@ import re
 
 from config import WAKE_PHRASE
 
+WAKE_REGEX = re.compile(r"\bhey[\s,!.?-]*nova\b")
+
 
 def normalize_text(text: str) -> str:
     """Normalize transcript for robust keyword matching."""
@@ -17,6 +19,8 @@ def normalize_text(text: str) -> str:
 def contains_wake_phrase(text: str) -> bool:
     """Return True when wake phrase appears in transcript."""
     normalized = normalize_text(text)
+    if WAKE_REGEX.search(normalized):
+        return True
     return WAKE_PHRASE in normalized
 
 
