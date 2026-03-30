@@ -26,7 +26,7 @@ ARECORD_FORMAT = "S16_LE"
 
 # whisper.cpp paths (update these on the Pi).
 WHISPER_EXECUTABLE_PATH = "/home/novarobot/whisper.cpp/build/bin/whisper-cli"
-WHISPER_MODEL_PATH = "/home/novarobot/whisper.cpp/models/ggml-small.en.bin"
+WHISPER_MODEL_PATH = "/home/novarobot/whisper.cpp/models/ggml-tiny.en.bin"
 WHISPER_LANGUAGE = "en"
 WHISPER_THREADS = 4
 
