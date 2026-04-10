@@ -96,9 +96,12 @@ def run() -> None:
                     previous_passive_text = ""
                     continue
 
-                phrase, letter = parsed
+                phrase, letter, duration_ms = parsed
                 print(f"Command recognized: {phrase}")
-                motor.send_command(letter)
+                if duration_ms is None:
+                    motor.send_command(letter)
+                else:
+                    motor.send_message(f"{letter}{duration_ms}")
                 previous_passive_text = ""
                 continue
 

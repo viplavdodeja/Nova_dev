@@ -19,6 +19,7 @@ No Arduino code, no TTS, no UI, no LLM.
 - `R` = right
 - `S` = spin
 - `X` = emergency stop
+- `<LETTER><milliseconds>` = timed move, for example `F1000`
 
 ## LED State Messages
 The Pi also sends LED state tokens to Arduino:
@@ -133,10 +134,11 @@ Typical output includes:
 - Moving LED is controlled by the Arduino when a motion command starts and ends.
 - Command mode can use grammar-constrained decoding for better command accuracy.
 - Command mode supports:
-  - `forward -> F`
-  - `backward/back/reverse -> B`
-  - `left -> L`
-  - `right -> R`
-  - `stop -> X`
-  - `spin -> S`
+- `forward -> F`
+- `backward/back/reverse -> B`
+- `left -> L`
+- `right -> R`
+- `stop -> X`
+- `spin -> S`
+- Spoken durations are supported, such as `move forward for 1 second`, `turn left for 2 seconds`, or `spin for half second`.
 - Then returns to passive mode.

@@ -1,16 +1,48 @@
 root ::= command
 
-command ::= "forward"
-         | "go forward"
-         | "move forward"
-         | "backward"
-         | "go backward"
-         | "move backward"
-         | "back"
-         | "reverse"
-         | "left"
-         | "turn left"
-         | "right"
-         | "turn right"
-         | "stop"
-         | "spin"
+command ::= base_command
+         | base_command " for " duration
+
+base_command ::= "forward"
+               | "go forward"
+               | "move forward"
+               | "backward"
+               | "go backward"
+               | "move backward"
+               | "back"
+               | "reverse"
+               | "left"
+               | "turn left"
+               | "right"
+               | "turn right"
+               | "stop"
+               | "spin"
+
+duration ::= number " " unit
+
+number ::= digit
+         | digit digit
+         | digit "." digit
+         | "a"
+         | "an"
+         | "half"
+         | "one"
+         | "two"
+         | "three"
+         | "four"
+         | "five"
+         | "six"
+         | "seven"
+         | "eight"
+         | "nine"
+         | "ten"
+
+unit ::= "second"
+       | "seconds"
+       | "sec"
+       | "secs"
+       | "millisecond"
+       | "milliseconds"
+       | "ms"
+
+digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
