@@ -96,12 +96,14 @@ def run() -> None:
                     previous_passive_text = ""
                     continue
 
-                phrase, letter, duration_ms = parsed
+                phrase, serial_command, duration_ms = parsed
                 print(f"Command recognized: {phrase}")
                 if duration_ms is None:
-                    motor.send_command(letter)
+                    payload = serial_command
                 else:
-                    motor.send_message(f"{letter}{duration_ms}")
+                    payload = f"{serial_command}{duration_ms}"
+                print(f"Sending motion payload: {payload}")
+                motor.send_message(payload)
                 previous_passive_text = ""
                 continue
 

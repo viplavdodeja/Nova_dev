@@ -41,5 +41,13 @@ WHISPER_VAD_THRESHOLD = 0.5
 ENABLE_COMMAND_GRAMMAR = True
 COMMAND_GRAMMAR_PATH = Path("command_grammar.gbnf")
 
+# Calibrated motion timings in milliseconds.
+FORWARD_DEFAULT_MS = 1000
+BACKWARD_DEFAULT_MS = 1000
+TURN_LEFT_DEFAULT_MS = 250
+TURN_RIGHT_DEFAULT_MS = 250
+U_TURN_DEFAULT_MS = 450
+SPIN_360_DEFAULT_MS = 900
+
 # Temporary audio directory used for WAV chunks.
 TEMP_AUDIO_DIR = Path("audio_files")

@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import re
 
-from config import WAKE_PHRASE
+from config import (
+    BACKWARD_DEFAULT_MS,
+    FORWARD_DEFAULT_MS,
+    SPIN_360_DEFAULT_MS,
+    TURN_LEFT_DEFAULT_MS,
+    TURN_RIGHT_DEFAULT_MS,
+    U_TURN_DEFAULT_MS,
+    WAKE_PHRASE,
+)
 
 WAKE_REGEX = re.compile(r"\bhey[\s,!.?-]*nova\b")
 DURATION_REGEX = re.compile(
@@ -27,6 +35,33 @@ NUMBER_WORDS = {
     "nine": 9.0,
     "ten": 10.0,
 }
+
+COMMAND_PATTERNS = [
+    ("u turn left", ("u turn left", "L", U_TURN_DEFAULT_MS)),
+    ("u-turn left", ("u turn left", "L", U_TURN_DEFAULT_MS)),
+    ("u turn right", ("u turn right", "R", U_TURN_DEFAULT_MS)),
+    ("u-turn right", ("u turn right", "R", U_TURN_DEFAULT_MS)),
+    ("u turn", ("u turn", "R", U_TURN_DEFAULT_MS)),
+    ("u-turn", ("u turn", "R", U_TURN_DEFAULT_MS)),
+    ("spin left", ("spin left", "SL", SPIN_360_DEFAULT_MS)),
+    ("spin right", ("spin right", "SR", SPIN_360_DEFAULT_MS)),
+    ("turn left", ("turn left", "L", TURN_LEFT_DEFAULT_MS)),
+    ("left turn", ("turn left", "L", TURN_LEFT_DEFAULT_MS)),
+    ("turn right", ("turn right", "R", TURN_RIGHT_DEFAULT_MS)),
+    ("right turn", ("turn right", "R", TURN_RIGHT_DEFAULT_MS)),
+    ("move forward", ("move forward", "F", FORWARD_DEFAULT_MS)),
+    ("go forward", ("go forward", "F", FORWARD_DEFAULT_MS)),
+    ("forward", ("forward", "F", FORWARD_DEFAULT_MS)),
+    ("move backward", ("move backward", "B", BACKWARD_DEFAULT_MS)),
+    ("go backward", ("go backward", "B", BACKWARD_DEFAULT_MS)),
+    ("backward", ("backward", "B", BACKWARD_DEFAULT_MS)),
+    ("reverse", ("reverse", "B", BACKWARD_DEFAULT_MS)),
+    ("back", ("back", "B", BACKWARD_DEFAULT_MS)),
+    ("left", ("left", "L", TURN_LEFT_DEFAULT_MS)),
+    ("right", ("right", "R", TURN_RIGHT_DEFAULT_MS)),
+    ("stop", ("stop", "X", None)),
+    ("spin", ("spin", "SR", SPIN_360_DEFAULT_MS)),
+]
 
 
 def normalize_text(text: str) -> str:
@@ -76,24 +111,14 @@ def _parse_duration_ms(text: str) -> int | None:
 
 
 def parse_motor_command(text: str) -> tuple[str, str, int | None] | None:
-    """Parse transcript and return (matched_phrase, serial_letter, duration_ms)."""
+    """Parse transcript and return (matched_phrase, serial_command, duration_ms)."""
     normalized = normalize_text(text)
     if not normalized:
         return None
 
-    duration_ms = _parse_duration_ms(normalized)
+    spoken_duration_ms = _parse_duration_ms(normalized)
 
-    checks = [
-        ("forward", "F"),
-        ("backward", "B"),
-        ("reverse", "B"),
-        ("back", "B"),
-        ("left", "L"),
-        ("right", "R"),
-        ("stop", "X"),
-        ("spin", "S"),
-    ]
-    for phrase, letter in checks:
+    for phrase, (label, command, default_duration_ms) in COMMAND_PATTERNS:
         if phrase in normalized:
-            return phrase, letter, duration_ms
+            return label, command, spoken_duration_ms or default_duration_ms
     return None

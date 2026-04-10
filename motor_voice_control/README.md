@@ -20,6 +20,8 @@ No Arduino code, no TTS, no UI, no LLM.
 - `S` = spin
 - `X` = emergency stop
 - `<LETTER><milliseconds>` = timed move, for example `F1000`
+- `SL<milliseconds>` = spin left
+- `SR<milliseconds>` = spin right
 
 ## LED State Messages
 The Pi also sends LED state tokens to Arduino:
@@ -138,7 +140,14 @@ Typical output includes:
 - `backward/back/reverse -> B`
 - `left -> L`
 - `right -> R`
+- `turn left -> L250`
+- `turn right -> R250`
+- `u turn -> R450`
+- `u turn left -> L450`
+- `u turn right -> R450`
+- `spin left -> SL900`
+- `spin right -> SR900`
+- `spin -> SR900`
 - `stop -> X`
-- `spin -> S`
 - Spoken durations are supported, such as `move forward for 1 second`, `turn left for 2 seconds`, or `spin for half second`.
 - Then returns to passive mode.
