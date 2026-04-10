@@ -77,4 +77,5 @@ Nova currently has:
 - working Arduino motor control from the Pi
 - working servo-based camera positioning
 
-The project is past subsystem bring-up and now entering integration, calibration, and behavior-layer development.
+The project is past subsystem bring-up and now entering integration, calibration, and behavior-layer development
+

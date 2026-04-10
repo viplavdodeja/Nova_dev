@@ -1,4 +1,4 @@
-"""Use webcam detections to pan the camera servo left, right, or center."""
+"""Use webcam detections to incrementally pan the camera servo toward a target."""
 
 from __future__ import annotations
 
@@ -23,8 +23,13 @@ DEFAULT_MODEL_PATH = "yolo11n.pt"
 DEFAULT_TARGET_LABEL = "person"
 DEFAULT_CONFIDENCE = 0.45
 DEFAULT_DEADZONE_RATIO = 0.2
-DEFAULT_COMMAND_COOLDOWN = 0.75
-DEFAULT_CONFIRM_FRAMES = 3
+DEFAULT_SERVO_CENTER_ANGLE = 90
+DEFAULT_SERVO_MIN_ANGLE = 20
+DEFAULT_SERVO_MAX_ANGLE = 160
+DEFAULT_SMALL_STEP = 3
+DEFAULT_LARGE_STEP = 7
+DEFAULT_COMMAND_COOLDOWN = 0.2
+DEFAULT_CONFIRM_FRAMES = 2
 DEFAULT_LOST_TARGET_HOLD_SECONDS = 1.0
 SERVO_BOOT_DELAY_SECONDS = 2.0
 
@@ -45,7 +50,7 @@ class Detection:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Track a detected object and pan the Arduino-controlled camera servo.",
+        description="Track a detected object and incrementally pan the Arduino-controlled camera servo.",
     )
     parser.add_argument("--port", default=DEFAULT_SERIAL_PORT, help="Arduino serial port.")
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUD_RATE, help="Serial baud rate.")
@@ -59,23 +64,28 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_DEADZONE_RATIO,
         help="Centered zone width as a fraction of frame width.",
     )
+    parser.add_argument("--servo-center-angle", type=int, default=DEFAULT_SERVO_CENTER_ANGLE, help="Center servo angle.")
+    parser.add_argument("--servo-min-angle", type=int, default=DEFAULT_SERVO_MIN_ANGLE, help="Minimum safe servo angle.")
+    parser.add_argument("--servo-max-angle", type=int, default=DEFAULT_SERVO_MAX_ANGLE, help="Maximum safe servo angle.")
+    parser.add_argument("--small-step", type=int, default=DEFAULT_SMALL_STEP, help="Servo angle delta for moderate error.")
+    parser.add_argument("--large-step", type=int, default=DEFAULT_LARGE_STEP, help="Servo angle delta for large error.")
     parser.add_argument(
         "--cooldown",
         type=float,
         default=DEFAULT_COMMAND_COOLDOWN,
-        help="Minimum seconds between repeated servo commands.",
+        help="Minimum seconds between servo adjustments.",
     )
     parser.add_argument(
         "--confirm-frames",
         type=int,
         default=DEFAULT_CONFIRM_FRAMES,
-        help="How many consecutive frames must agree before changing servo direction.",
+        help="How many consecutive frames must agree before adjusting the servo.",
     )
     parser.add_argument(
         "--lost-target-hold-seconds",
         type=float,
         default=DEFAULT_LOST_TARGET_HOLD_SECONDS,
-        help="How long to keep the current servo direction after the target disappears.",
+        help="How long to keep the current angle after the target disappears.",
     )
     parser.add_argument(
         "--show-window",
@@ -91,11 +101,11 @@ def open_serial(port: str, baud: int) -> serial.Serial:
     return connection
 
 
-def send_servo_command(connection: serial.Serial, command: str) -> None:
-    payload = (command.strip().upper() + "\n").encode("utf-8")
+def send_servo_angle(connection: serial.Serial, angle: int) -> None:
+    payload = f"SV{angle}\n".encode("utf-8")
     connection.write(payload)
     connection.flush()
-    print(f"Sent servo command: {command}")
+    print(f"Sent servo angle: {angle}")
 
 
 def find_best_detection(result, target_label: str, confidence_threshold: float) -> Detection | None:
@@ -104,7 +114,7 @@ def find_best_detection(result, target_label: str, confidence_threshold: float) 
         return None
 
     best: Detection | None = None
-    target_label = target_label.strip().lower()
+    normalized_label = target_label.strip().lower()
 
     for box in boxes:
         confidence = float(box.conf[0])
@@ -113,7 +123,7 @@ def find_best_detection(result, target_label: str, confidence_threshold: float) 
 
         label_index = int(box.cls[0])
         label = str(result.names.get(label_index, f"class_{label_index}")).strip().lower()
-        if label != target_label:
+        if label != normalized_label:
             continue
 
         x1, y1, x2, y2 = [float(value) for value in box.xyxy[0]]
@@ -131,18 +141,22 @@ def find_best_detection(result, target_label: str, confidence_threshold: float) 
     return best
 
 
-def classify_servo_direction(frame_width: int, center_x: float, deadzone_ratio: float) -> str:
+def compute_servo_adjustment(frame_width: int, center_x: float, deadzone_ratio: float, small_step: int, large_step: int) -> int:
     midpoint = frame_width / 2.0
+    offset = center_x - midpoint
     deadzone_half_width = (frame_width * deadzone_ratio) / 2.0
+    large_error_threshold = frame_width * 0.25
 
-    if center_x < midpoint - deadzone_half_width:
-        return "LOOK_LEFT"
-    if center_x > midpoint + deadzone_half_width:
-        return "LOOK_RIGHT"
-    return "LOOK_CENTER"
+    if abs(offset) <= deadzone_half_width:
+        return 0
+
+    step = large_step if abs(offset) >= large_error_threshold else small_step
+
+    # Servo angle decreases when panning the camera to the right on the current mount.
+    return -step if offset > 0 else step
 
 
-def annotate_frame(frame, detection: Detection | None, command: str, deadzone_ratio: float):
+def annotate_frame(frame, detection: Detection | None, servo_angle: int, deadzone_ratio: float):
     frame_height, frame_width = frame.shape[:2]
     midpoint = frame_width // 2
     deadzone_half_width = int((frame_width * deadzone_ratio) / 2.0)
@@ -151,7 +165,7 @@ def annotate_frame(frame, detection: Detection | None, command: str, deadzone_ra
     cv2.line(frame, (midpoint - deadzone_half_width, 0), (midpoint - deadzone_half_width, frame_height), (0, 255, 255), 1)
     cv2.line(frame, (midpoint + deadzone_half_width, 0), (midpoint + deadzone_half_width, frame_height), (0, 255, 255), 1)
 
-    status = f"Servo target: {command}"
+    status = f"Servo angle: {servo_angle}"
     cv2.putText(frame, status, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 220, 50), 2)
 
     if detection is None:
@@ -184,14 +198,14 @@ def run(args: argparse.Namespace) -> int:
         print(f"Serial error: {exc}", file=sys.stderr)
         return 1
 
-    current_command = "LOOK_CENTER"
+    current_angle = max(min(args.servo_center_angle, args.servo_max_angle), args.servo_min_angle)
     last_command_time = 0.0
-    candidate_command = current_command
+    candidate_adjustment = 0
     candidate_frames = 0
     last_detection_time = 0.0
 
     try:
-        send_servo_command(connection, current_command)
+        send_servo_angle(connection, current_angle)
 
         while True:
             ok, frame = capture.read()
@@ -209,52 +223,63 @@ def run(args: argparse.Namespace) -> int:
                 )
 
             if best_detection is not None:
-                raw_desired_command = classify_servo_direction(
+                raw_adjustment = compute_servo_adjustment(
                     frame_width=frame.shape[1],
                     center_x=best_detection.center_x,
                     deadzone_ratio=args.deadzone_ratio,
+                    small_step=args.small_step,
+                    large_step=args.large_step,
                 )
                 last_detection_time = time.monotonic()
             else:
-                raw_desired_command = current_command
+                raw_adjustment = 0
 
             now = time.monotonic()
             if best_detection is None and (now - last_detection_time) >= args.lost_target_hold_seconds:
-                raw_desired_command = "LOOK_CENTER"
+                target_angle = max(min(args.servo_center_angle, args.servo_max_angle), args.servo_min_angle)
+                raw_adjustment = target_angle - current_angle
 
-            if raw_desired_command == current_command:
-                candidate_command = current_command
+            if raw_adjustment == 0:
+                candidate_adjustment = 0
                 candidate_frames = 0
-                desired_command = current_command
+                desired_adjustment = 0
             else:
-                if raw_desired_command == candidate_command:
+                direction = 1 if raw_adjustment > 0 else -1
+                if direction == candidate_adjustment:
                     candidate_frames += 1
                 else:
-                    candidate_command = raw_desired_command
+                    candidate_adjustment = direction
                     candidate_frames = 1
 
                 if candidate_frames >= max(args.confirm_frames, 1):
-                    desired_command = candidate_command
+                    desired_adjustment = raw_adjustment
                 else:
-                    desired_command = current_command
+                    desired_adjustment = 0
 
-            if desired_command != current_command and (now - last_command_time) >= args.cooldown:
-                send_servo_command(connection, desired_command)
-                current_command = desired_command
-                last_command_time = now
-                candidate_command = current_command
+            if desired_adjustment != 0 and (now - last_command_time) >= args.cooldown:
+                new_angle = current_angle + desired_adjustment
+                new_angle = max(min(new_angle, args.servo_max_angle), args.servo_min_angle)
+                if new_angle != current_angle:
+                    send_servo_angle(connection, new_angle)
+                    current_angle = new_angle
+                    last_command_time = now
+                candidate_adjustment = 0
                 candidate_frames = 0
 
             if args.show_window:
-                annotated = annotate_frame(frame.copy(), best_detection, current_command, args.deadzone_ratio)
+                annotated = annotate_frame(frame.copy(), best_detection, current_angle, args.deadzone_ratio)
                 cv2.imshow("Servo CV Tracker", annotated)
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     break
+
+            if args.frame_interval > 0:
+                time.sleep(args.frame_interval)
     except KeyboardInterrupt:
         print("\nStopping servo CV tracker.")
     finally:
         try:
-            send_servo_command(connection, "LOOK_CENTER")
+            center_angle = max(min(args.servo_center_angle, args.servo_max_angle), args.servo_min_angle)
+            send_servo_angle(connection, center_angle)
         except Exception:
             pass
         connection.close()
