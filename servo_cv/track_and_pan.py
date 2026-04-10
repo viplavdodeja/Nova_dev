@@ -272,8 +272,9 @@ def run(args: argparse.Namespace) -> int:
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     break
 
-            if args.frame_interval > 0:
-                time.sleep(args.frame_interval)
+            frame_interval = getattr(args, "frame_interval", DEFAULT_FRAME_INTERVAL)
+            if frame_interval > 0:
+                time.sleep(frame_interval)
     except KeyboardInterrupt:
         print("\nStopping servo CV tracker.")
     finally:
