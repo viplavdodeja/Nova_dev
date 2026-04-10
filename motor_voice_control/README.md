@@ -22,6 +22,9 @@ No Arduino code, no TTS, no UI, no LLM.
 - `<LETTER><milliseconds>` = timed move, for example `F1000`
 - `SL<milliseconds>` = spin left
 - `SR<milliseconds>` = spin right
+- `LOOK_LEFT` = move camera servo left
+- `LOOK_RIGHT` = move camera servo right
+- `LOOK_CENTER` = center camera servo
 
 ## LED State Messages
 The Pi also sends LED state tokens to Arduino:
@@ -148,6 +151,9 @@ Typical output includes:
 - `spin left -> SL900`
 - `spin right -> SR900`
 - `spin -> SR900`
+- `look left -> LOOK_LEFT`
+- `look right -> LOOK_RIGHT`
+- `look forward -> LOOK_CENTER`
 - `stop -> X`
 - Spoken durations are supported, such as `move forward for 1 second`, `turn left for 2 seconds`, or `spin for half second`.
 - Then returns to passive mode.

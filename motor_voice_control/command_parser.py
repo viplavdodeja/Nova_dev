@@ -37,6 +37,11 @@ NUMBER_WORDS = {
 }
 
 COMMAND_PATTERNS = [
+    ("look left", ("look left", "LOOK_LEFT", None)),
+    ("look right", ("look right", "LOOK_RIGHT", None)),
+    ("look forward", ("look forward", "LOOK_CENTER", None)),
+    ("center camera", ("center camera", "LOOK_CENTER", None)),
+    ("center view", ("center view", "LOOK_CENTER", None)),
     ("u turn left", ("u turn left", "L", U_TURN_DEFAULT_MS)),
     ("u-turn left", ("u turn left", "L", U_TURN_DEFAULT_MS)),
     ("u turn right", ("u turn right", "R", U_TURN_DEFAULT_MS)),
