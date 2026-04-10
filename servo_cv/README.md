@@ -45,14 +45,24 @@ Useful options:
 - `--confidence 0.45`
 - `--deadzone-ratio 0.2`
 - `--cooldown 0.75`
+- `--confirm-frames 3`
+- `--lost-target-hold-seconds 1.0`
 - `--show-window`
 
 ## Tuning Notes
 
 - If the servo oscillates too much, increase `--cooldown`.
 - If the servo overreacts near the frame center, increase `--deadzone-ratio`.
+- If the servo still flips between directions, increase `--confirm-frames`.
+- If the servo recenters too aggressively when detection flickers, increase `--lost-target-hold-seconds`.
 - If you want to track a different object class, change `--target-label`.
 - If no target is detected, the script recenters the camera.
+
+Recommended starting point for a less jittery tracker:
+
+```bash
+python3 track_and_pan.py --port /dev/ttyUSB0 --target-label person --deadzone-ratio 0.4 --cooldown 1.5 --confirm-frames 4 --lost-target-hold-seconds 1.5 --show-window
+```
 
 ## Next Step
 

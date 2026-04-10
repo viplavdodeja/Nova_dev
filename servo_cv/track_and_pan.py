@@ -24,6 +24,8 @@ DEFAULT_TARGET_LABEL = "person"
 DEFAULT_CONFIDENCE = 0.45
 DEFAULT_DEADZONE_RATIO = 0.2
 DEFAULT_COMMAND_COOLDOWN = 0.75
+DEFAULT_CONFIRM_FRAMES = 3
+DEFAULT_LOST_TARGET_HOLD_SECONDS = 1.0
 SERVO_BOOT_DELAY_SECONDS = 2.0
 
 
@@ -62,6 +64,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_COMMAND_COOLDOWN,
         help="Minimum seconds between repeated servo commands.",
+    )
+    parser.add_argument(
+        "--confirm-frames",
+        type=int,
+        default=DEFAULT_CONFIRM_FRAMES,
+        help="How many consecutive frames must agree before changing servo direction.",
+    )
+    parser.add_argument(
+        "--lost-target-hold-seconds",
+        type=float,
+        default=DEFAULT_LOST_TARGET_HOLD_SECONDS,
+        help="How long to keep the current servo direction after the target disappears.",
     )
     parser.add_argument(
         "--show-window",
@@ -172,6 +186,9 @@ def run(args: argparse.Namespace) -> int:
 
     current_command = "LOOK_CENTER"
     last_command_time = 0.0
+    candidate_command = current_command
+    candidate_frames = 0
+    last_detection_time = 0.0
 
     try:
         send_servo_command(connection, current_command)
@@ -192,19 +209,41 @@ def run(args: argparse.Namespace) -> int:
                 )
 
             if best_detection is not None:
-                desired_command = classify_servo_direction(
+                raw_desired_command = classify_servo_direction(
                     frame_width=frame.shape[1],
                     center_x=best_detection.center_x,
                     deadzone_ratio=args.deadzone_ratio,
                 )
+                last_detection_time = time.monotonic()
             else:
-                desired_command = "LOOK_CENTER"
+                raw_desired_command = current_command
 
             now = time.monotonic()
+            if best_detection is None and (now - last_detection_time) >= args.lost_target_hold_seconds:
+                raw_desired_command = "LOOK_CENTER"
+
+            if raw_desired_command == current_command:
+                candidate_command = current_command
+                candidate_frames = 0
+                desired_command = current_command
+            else:
+                if raw_desired_command == candidate_command:
+                    candidate_frames += 1
+                else:
+                    candidate_command = raw_desired_command
+                    candidate_frames = 1
+
+                if candidate_frames >= max(args.confirm_frames, 1):
+                    desired_command = candidate_command
+                else:
+                    desired_command = current_command
+
             if desired_command != current_command and (now - last_command_time) >= args.cooldown:
                 send_servo_command(connection, desired_command)
                 current_command = desired_command
                 last_command_time = now
+                candidate_command = current_command
+                candidate_frames = 0
 
             if args.show_window:
                 annotated = annotate_frame(frame.copy(), best_detection, current_command, args.deadzone_ratio)
