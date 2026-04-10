@@ -19,8 +19,8 @@ from config import (
 from motor_serial import MotorController
 from speech_listener import WhisperCppListener
 
-LED_PASSIVE = "LED_STOP"
-LED_COMMAND = "LED_MOVE"
+LED_IDLE = "LED_READY"
+LED_COMMAND = "LED_LISTEN"
 
 
 def run() -> None:
@@ -38,7 +38,7 @@ def run() -> None:
     )
     if not motor.connect():
         return
-    motor.set_led_state(LED_PASSIVE)
+    motor.set_led_state(LED_IDLE)
 
     print("Voice motor control started")
     print("Passive listening mode active")
@@ -64,7 +64,7 @@ def run() -> None:
             # Emergency stop has highest priority in passive mode.
             if contains_emergency_stop(combined_passive_text):
                 print("Emergency stop detected")
-                motor.send_command("S")
+                motor.send_command("X")
                 wake_hits = 0
                 previous_passive_text = ""
                 continue
@@ -92,14 +92,13 @@ def run() -> None:
                 parsed = parse_motor_command(command_text)
                 if parsed is None:
                     print("No valid command recognized")
-                    motor.set_led_state(LED_PASSIVE)
+                    motor.set_led_state(LED_IDLE)
                     previous_passive_text = ""
                     continue
 
                 phrase, letter = parsed
                 print(f"Command recognized: {phrase}")
                 motor.send_command(letter)
-                motor.set_led_state(LED_PASSIVE)
                 previous_passive_text = ""
                 continue
 
@@ -108,7 +107,7 @@ def run() -> None:
     except KeyboardInterrupt:
         print("\nShutting down voice motor control")
     finally:
-        motor.set_led_state(LED_PASSIVE)
+        motor.set_led_state(LED_IDLE)
         motor.close()
 
 

@@ -17,13 +17,14 @@ No Arduino code, no TTS, no UI, no LLM.
 - `B` = backward
 - `L` = left
 - `R` = right
-- `S` = spin (also used for passive emergency stop trigger)
-- `X` = emergency stop command-mode mapping
+- `S` = spin
+- `X` = emergency stop
 
 ## LED State Messages
 The Pi also sends LED state tokens to Arduino:
-- `LED_STOP` in passive listening mode (orange)
-- `LED_MOVE` while waiting for command input (green)
+- `LED_READY` in idle/passive mode (blue)
+- `LED_LISTEN` while waiting for command input (orange)
+- `LED_MOVE` while the Arduino is actively moving (green)
 
 ## Project Files
 - `main.py`: app loop (passive mode + command mode)
@@ -114,7 +115,7 @@ Typical output includes:
 - `Voice motor control started`
 - `Heard (passive): ...`
 - `Emergency stop detected`
-- `Sent to Arduino: S`
+- `Sent to Arduino: X`
 - `Wake phrase detected: hey nova`
 - `Heard (command): ...`
 - `Command recognized: forward`
@@ -122,11 +123,14 @@ Typical output includes:
 - `No valid command recognized`
 
 ## Behavior Summary
-- Passive mode always listens for `"stop"` and sends `S` immediately.
+- Passive mode always listens for `"stop"` and sends `X` immediately.
 - Passive mode listens for wake phrase `"hey nova"`.
 - Wake phrase matching handles punctuation variants such as `hey, nova`.
 - Passive mode uses phrase buffering across chunks (`previous + current`) to catch split phrases.
 - After wake phrase, one command clip is recorded and parsed.
+- Idle LED is controlled by `LED_READY`.
+- Command-mode LED is controlled by `LED_LISTEN`.
+- Moving LED is controlled by the Arduino when a motion command starts and ends.
 - Command mode can use grammar-constrained decoding for better command accuracy.
 - Command mode supports:
   - `forward -> F`
