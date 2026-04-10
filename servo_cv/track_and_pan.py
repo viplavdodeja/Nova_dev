@@ -1,0 +1,235 @@
+"""Use webcam detections to pan the camera servo left, right, or center."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from dataclasses import dataclass
+
+import cv2
+import serial
+
+try:
+    from ultralytics import YOLO
+except ImportError as exc:  # pragma: no cover - environment dependent
+    raise RuntimeError("ultralytics is required for servo_cv tracking.") from exc
+
+
+DEFAULT_SERIAL_PORT = "/dev/ttyUSB0"
+DEFAULT_BAUD_RATE = 9600
+DEFAULT_CAMERA_INDEX = 0
+DEFAULT_MODEL_PATH = "yolo11n.pt"
+DEFAULT_TARGET_LABEL = "person"
+DEFAULT_CONFIDENCE = 0.45
+DEFAULT_DEADZONE_RATIO = 0.2
+DEFAULT_COMMAND_COOLDOWN = 0.75
+SERVO_BOOT_DELAY_SECONDS = 2.0
+
+
+@dataclass
+class Detection:
+    label: str
+    confidence: float
+    center_x: float
+    center_y: float
+    width: float
+    height: float
+
+    @property
+    def area(self) -> float:
+        return self.width * self.height
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Track a detected object and pan the Arduino-controlled camera servo.",
+    )
+    parser.add_argument("--port", default=DEFAULT_SERIAL_PORT, help="Arduino serial port.")
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD_RATE, help="Serial baud rate.")
+    parser.add_argument("--camera-index", type=int, default=DEFAULT_CAMERA_INDEX, help="OpenCV camera index.")
+    parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="YOLO model path.")
+    parser.add_argument("--target-label", default=DEFAULT_TARGET_LABEL, help="Object label to track.")
+    parser.add_argument("--confidence", type=float, default=DEFAULT_CONFIDENCE, help="Minimum detection confidence.")
+    parser.add_argument(
+        "--deadzone-ratio",
+        type=float,
+        default=DEFAULT_DEADZONE_RATIO,
+        help="Centered zone width as a fraction of frame width.",
+    )
+    parser.add_argument(
+        "--cooldown",
+        type=float,
+        default=DEFAULT_COMMAND_COOLDOWN,
+        help="Minimum seconds between repeated servo commands.",
+    )
+    parser.add_argument(
+        "--show-window",
+        action="store_true",
+        help="Display the annotated webcam feed. Press q to quit.",
+    )
+    return parser
+
+
+def open_serial(port: str, baud: int) -> serial.Serial:
+    connection = serial.Serial(port, baud, timeout=1)
+    time.sleep(SERVO_BOOT_DELAY_SECONDS)
+    return connection
+
+
+def send_servo_command(connection: serial.Serial, command: str) -> None:
+    payload = (command.strip().upper() + "\n").encode("utf-8")
+    connection.write(payload)
+    connection.flush()
+    print(f"Sent servo command: {command}")
+
+
+def find_best_detection(result, target_label: str, confidence_threshold: float) -> Detection | None:
+    boxes = getattr(result, "boxes", None)
+    if boxes is None:
+        return None
+
+    best: Detection | None = None
+    target_label = target_label.strip().lower()
+
+    for box in boxes:
+        confidence = float(box.conf[0])
+        if confidence < confidence_threshold:
+            continue
+
+        label_index = int(box.cls[0])
+        label = str(result.names.get(label_index, f"class_{label_index}")).strip().lower()
+        if label != target_label:
+            continue
+
+        x1, y1, x2, y2 = [float(value) for value in box.xyxy[0]]
+        detection = Detection(
+            label=label,
+            confidence=confidence,
+            center_x=(x1 + x2) / 2.0,
+            center_y=(y1 + y2) / 2.0,
+            width=max(x2 - x1, 0.0),
+            height=max(y2 - y1, 0.0),
+        )
+        if best is None or detection.area > best.area:
+            best = detection
+
+    return best
+
+
+def classify_servo_direction(frame_width: int, center_x: float, deadzone_ratio: float) -> str:
+    midpoint = frame_width / 2.0
+    deadzone_half_width = (frame_width * deadzone_ratio) / 2.0
+
+    if center_x < midpoint - deadzone_half_width:
+        return "LOOK_LEFT"
+    if center_x > midpoint + deadzone_half_width:
+        return "LOOK_RIGHT"
+    return "LOOK_CENTER"
+
+
+def annotate_frame(frame, detection: Detection | None, command: str, deadzone_ratio: float):
+    frame_height, frame_width = frame.shape[:2]
+    midpoint = frame_width // 2
+    deadzone_half_width = int((frame_width * deadzone_ratio) / 2.0)
+
+    cv2.line(frame, (midpoint, 0), (midpoint, frame_height), (255, 255, 0), 1)
+    cv2.line(frame, (midpoint - deadzone_half_width, 0), (midpoint - deadzone_half_width, frame_height), (0, 255, 255), 1)
+    cv2.line(frame, (midpoint + deadzone_half_width, 0), (midpoint + deadzone_half_width, frame_height), (0, 255, 255), 1)
+
+    status = f"Servo target: {command}"
+    cv2.putText(frame, status, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 220, 50), 2)
+
+    if detection is None:
+        cv2.putText(frame, "No target detected", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 30, 255), 2)
+        return frame
+
+    half_width = detection.width / 2.0
+    half_height = detection.height / 2.0
+    x1 = int(detection.center_x - half_width)
+    y1 = int(detection.center_y - half_height)
+    x2 = int(detection.center_x + half_width)
+    y2 = int(detection.center_y + half_height)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 200, 0), 2)
+    label_text = f"{detection.label} {detection.confidence:.2f}"
+    cv2.putText(frame, label_text, (x1, max(y1 - 8, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
+    return frame
+
+
+def run(args: argparse.Namespace) -> int:
+    model = YOLO(args.model)
+    capture = cv2.VideoCapture(args.camera_index)
+    if not capture.isOpened():
+        print("Could not open camera.", file=sys.stderr)
+        return 1
+
+    try:
+        connection = open_serial(args.port, args.baud)
+    except serial.SerialException as exc:
+        capture.release()
+        print(f"Serial error: {exc}", file=sys.stderr)
+        return 1
+
+    current_command = "LOOK_CENTER"
+    last_command_time = 0.0
+
+    try:
+        send_servo_command(connection, current_command)
+
+        while True:
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                print("Failed to read frame.", file=sys.stderr)
+                break
+
+            results = model(frame, verbose=False)
+            best_detection = None
+            if results:
+                best_detection = find_best_detection(
+                    results[0],
+                    target_label=args.target_label,
+                    confidence_threshold=args.confidence,
+                )
+
+            if best_detection is not None:
+                desired_command = classify_servo_direction(
+                    frame_width=frame.shape[1],
+                    center_x=best_detection.center_x,
+                    deadzone_ratio=args.deadzone_ratio,
+                )
+            else:
+                desired_command = "LOOK_CENTER"
+
+            now = time.monotonic()
+            if desired_command != current_command and (now - last_command_time) >= args.cooldown:
+                send_servo_command(connection, desired_command)
+                current_command = desired_command
+                last_command_time = now
+
+            if args.show_window:
+                annotated = annotate_frame(frame.copy(), best_detection, current_command, args.deadzone_ratio)
+                cv2.imshow("Servo CV Tracker", annotated)
+                if (cv2.waitKey(1) & 0xFF) == ord("q"):
+                    break
+    except KeyboardInterrupt:
+        print("\nStopping servo CV tracker.")
+    finally:
+        try:
+            send_servo_command(connection, "LOOK_CENTER")
+        except Exception:
+            pass
+        connection.close()
+        capture.release()
+        cv2.destroyAllWindows()
+
+    return 0
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    return run(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
