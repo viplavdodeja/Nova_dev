@@ -15,15 +15,13 @@ DEFAULT_BAUD = 9600
 DEFAULT_TIMEOUT = 1.0
 DEFAULT_POST_SEND_DELAY = 0.2
 
-# The current Arduino protocol supports one spin command only.
-# Update the value for "spin-right" if your firmware later adds a distinct token.
 COMMAND_MAP = {
     "forward": "F",
     "backward": "B",
     "left-turn": "L",
     "right-turn": "R",
-    "spin-left": "S",
-    "spin-right": None,
+    "spin-left": "SL",
+    "spin-right": "SR",
 }
 
 
@@ -106,14 +104,7 @@ def build_payload(action: str | None, duration_ms: int | None, raw: str | None) 
     if duration_ms <= 0:
         raise ValueError("duration_ms must be a positive integer.")
 
-    command_token = COMMAND_MAP[action]
-    if command_token is None:
-        raise ValueError(
-            f"'{action}' is not available with the current Arduino protocol. "
-            "Add a dedicated firmware token first if you want an independent right spin."
-        )
-
-    return f"{command_token}{duration_ms}"
+    return f"{COMMAND_MAP[action]}{duration_ms}"
 
 
 def read_responses(connection: serial.Serial, read_seconds: float) -> None:
