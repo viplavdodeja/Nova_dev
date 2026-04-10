@@ -32,6 +32,7 @@ DEFAULT_COMMAND_COOLDOWN = 0.2
 DEFAULT_CONFIRM_FRAMES = 2
 DEFAULT_LOST_TARGET_HOLD_SECONDS = 1.0
 SERVO_BOOT_DELAY_SECONDS = 2.0
+DEFAULT_FRAME_INTERVAL = 0.3
 
 
 @dataclass
@@ -58,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="YOLO model path.")
     parser.add_argument("--target-label", default=DEFAULT_TARGET_LABEL, help="Object label to track.")
     parser.add_argument("--confidence", type=float, default=DEFAULT_CONFIDENCE, help="Minimum detection confidence.")
+    parser.add_argument("--frame-interval", type=float, default=DEFAULT_FRAME_INTERVAL, help="Seconds to wait between processed frames.")
     parser.add_argument(
         "--deadzone-ratio",
         type=float,
@@ -271,10 +273,6 @@ def run(args: argparse.Namespace) -> int:
                 cv2.imshow("Servo CV Tracker", annotated)
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     break
-
-            frame_interval = getattr(args, "frame_interval", DEFAULT_FRAME_INTERVAL)
-            if frame_interval > 0:
-                time.sleep(frame_interval)
     except KeyboardInterrupt:
         print("\nStopping servo CV tracker.")
     finally:
