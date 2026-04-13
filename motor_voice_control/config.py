@@ -22,6 +22,9 @@ MIC_DEVICE_INDEX = None
 STT_SAMPLE_RATE = 16000
 STT_BLOCK_SIZE = 8000
 
+# Calibrated linear travel speed.
+ROBOT_SPEED_CM_PER_SEC = 62.3
+
 # Calibrated motion timings in milliseconds.
 FORWARD_DEFAULT_MS = 1000
 BACKWARD_DEFAULT_MS = 1000

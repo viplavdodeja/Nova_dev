@@ -7,6 +7,7 @@ import re
 from config import (
     BACKWARD_DEFAULT_MS,
     FORWARD_DEFAULT_MS,
+    ROBOT_SPEED_CM_PER_SEC,
     SPIN_360_DEFAULT_MS,
     TURN_LEFT_DEFAULT_MS,
     TURN_RIGHT_DEFAULT_MS,
@@ -18,6 +19,10 @@ WAKE_REGEX = re.compile(r"\bhey[\s,!.?-]*nova\b")
 DURATION_REGEX = re.compile(
     r"\bfor\s+(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
     r"(?P<unit>second|seconds|sec|secs|millisecond|milliseconds|ms)\b"
+)
+DISTANCE_REGEX = re.compile(
+    r"\b(?:(?:for|move|go)\s+)?(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
+    r"(?P<unit>centimeter|centimeters|centimetre|centimetres|cm|inch|inches|in)\b"
 )
 
 NUMBER_WORDS = {
@@ -115,6 +120,35 @@ def _parse_duration_ms(text: str) -> int | None:
     return duration_ms if duration_ms > 0 else None
 
 
+def _distance_to_cm(value: float, unit: str) -> float:
+    normalized_unit = unit.strip().lower()
+    if normalized_unit in {"inch", "inches", "in"}:
+        return value * 2.54
+    return value
+
+
+def _parse_distance_ms(text: str) -> int | None:
+    """Parse spoken distance like 'forward 10 cm' or 'backward 4 inches'."""
+    match = DISTANCE_REGEX.search(text)
+    if match is None:
+        return None
+
+    raw_value = match.group("value")
+    raw_unit = match.group("unit")
+
+    try:
+        numeric_value = float(raw_value)
+    except ValueError:
+        numeric_value = NUMBER_WORDS.get(raw_value)
+
+    if numeric_value is None or numeric_value <= 0 or ROBOT_SPEED_CM_PER_SEC <= 0:
+        return None
+
+    distance_cm = _distance_to_cm(numeric_value, raw_unit)
+    duration_ms = int((distance_cm / ROBOT_SPEED_CM_PER_SEC) * 1000)
+    return duration_ms if duration_ms > 0 else None
+
+
 def parse_motor_command(text: str) -> tuple[str, str, int | None] | None:
     """Parse transcript and return (matched_phrase, serial_command, duration_ms)."""
     normalized = normalize_text(text)
@@ -122,8 +156,14 @@ def parse_motor_command(text: str) -> tuple[str, str, int | None] | None:
         return None
 
     spoken_duration_ms = _parse_duration_ms(normalized)
+    spoken_distance_ms = _parse_distance_ms(normalized)
 
     for phrase, (label, command, default_duration_ms) in COMMAND_PATTERNS:
         if phrase in normalized:
-            return label, command, spoken_duration_ms or default_duration_ms
+            duration_ms = default_duration_ms
+            if command in {"F", "B"} and spoken_distance_ms is not None:
+                duration_ms = spoken_distance_ms
+            elif spoken_duration_ms is not None:
+                duration_ms = spoken_duration_ms
+            return label, command, duration_ms
     return None

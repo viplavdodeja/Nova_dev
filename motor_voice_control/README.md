@@ -74,6 +74,7 @@ Edit these in `config.py`:
 - `MIC_DEVICE_INDEX`
 - `STT_SAMPLE_RATE`
 - `STT_BLOCK_SIZE`
+- `ROBOT_SPEED_CM_PER_SEC`
 
 ## Run the App
 
@@ -120,5 +121,6 @@ Typical output includes:
 - `look right -> LOOK_RIGHT`
 - `look forward -> LOOK_CENTER`
 - `stop -> X`
+- Spoken distances are supported for forward/backward, such as `move forward 20 cm`, `go backward 12 inches`, or `forward for 10 cm`.
 - Spoken durations are supported, such as `move forward for 1 second`, `turn left for 2 seconds`, or `spin for half second`.
 - Then returns to passive mode.
