@@ -74,7 +74,8 @@ Edit these in `config.py`:
 - `MIC_DEVICE_INDEX`
 - `STT_SAMPLE_RATE`
 - `STT_BLOCK_SIZE`
-- `ROBOT_SPEED_CM_PER_SEC`
+- `FORWARD_DISTANCE_CALIBRATION_IN`
+- `BACKWARD_DISTANCE_CALIBRATION_IN`
 
 ## Run the App
 
@@ -122,5 +123,6 @@ Typical output includes:
 - `look forward -> LOOK_CENTER`
 - `stop -> X`
 - Spoken distances are supported for forward/backward, such as `move forward 20 cm`, `go backward 12 inches`, or `forward for 10 cm`.
+- Distance commands now use lookup-table interpolation from the calibration arrays in `config.py`, not a single global speed constant.
 - Spoken durations are supported, such as `move forward for 1 second`, `turn left for 2 seconds`, or `spin for half second`.
 - Then returns to passive mode.

@@ -6,8 +6,9 @@ import re
 
 from config import (
     BACKWARD_DEFAULT_MS,
+    BACKWARD_DISTANCE_CALIBRATION_IN,
     FORWARD_DEFAULT_MS,
-    ROBOT_SPEED_CM_PER_SEC,
+    FORWARD_DISTANCE_CALIBRATION_IN,
     SPIN_360_DEFAULT_MS,
     TURN_LEFT_DEFAULT_MS,
     TURN_RIGHT_DEFAULT_MS,
@@ -127,7 +128,39 @@ def _distance_to_cm(value: float, unit: str) -> float:
     return value
 
 
-def _parse_distance_ms(text: str) -> int | None:
+def _distance_to_inches(value: float, unit: str) -> float:
+    normalized_unit = unit.strip().lower()
+    if normalized_unit in {"inch", "inches", "in"}:
+        return value
+    return value / 2.54
+
+
+def _interpolate_duration(distance_in: float, calibration_table: list[tuple[float, int]]) -> int | None:
+    """Map distance in inches to duration via linear interpolation."""
+    if not calibration_table:
+        return None
+
+    table = sorted(calibration_table, key=lambda item: item[0])
+
+    if distance_in <= table[0][0]:
+        return int(table[0][1])
+
+    if distance_in >= table[-1][0]:
+        return int(table[-1][1])
+
+    for index in range(len(table) - 1):
+        d1, t1 = table[index]
+        d2, t2 = table[index + 1]
+        if d1 <= distance_in <= d2:
+            if d2 == d1:
+                return int(t1)
+            ratio = (distance_in - d1) / (d2 - d1)
+            return int(t1 + ratio * (t2 - t1))
+
+    return None
+
+
+def _parse_distance_duration(text: str, command: str) -> int | None:
     """Parse spoken distance like 'forward 10 cm' or 'backward 4 inches'."""
     match = DISTANCE_REGEX.search(text)
     if match is None:
@@ -141,12 +174,15 @@ def _parse_distance_ms(text: str) -> int | None:
     except ValueError:
         numeric_value = NUMBER_WORDS.get(raw_value)
 
-    if numeric_value is None or numeric_value <= 0 or ROBOT_SPEED_CM_PER_SEC <= 0:
+    if numeric_value is None or numeric_value <= 0:
         return None
 
-    distance_cm = _distance_to_cm(numeric_value, raw_unit)
-    duration_ms = int((distance_cm / ROBOT_SPEED_CM_PER_SEC) * 1000)
-    return duration_ms if duration_ms > 0 else None
+    distance_in = _distance_to_inches(numeric_value, raw_unit)
+    if command == "F":
+        return _interpolate_duration(distance_in, FORWARD_DISTANCE_CALIBRATION_IN)
+    if command == "B":
+        return _interpolate_duration(distance_in, BACKWARD_DISTANCE_CALIBRATION_IN)
+    return None
 
 
 def parse_motor_command(text: str) -> tuple[str, str, int | None] | None:
@@ -156,11 +192,11 @@ def parse_motor_command(text: str) -> tuple[str, str, int | None] | None:
         return None
 
     spoken_duration_ms = _parse_duration_ms(normalized)
-    spoken_distance_ms = _parse_distance_ms(normalized)
 
     for phrase, (label, command, default_duration_ms) in COMMAND_PATTERNS:
         if phrase in normalized:
             duration_ms = default_duration_ms
+            spoken_distance_ms = _parse_distance_duration(normalized, command)
             if command in {"F", "B"} and spoken_distance_ms is not None:
                 duration_ms = spoken_distance_ms
             elif spoken_duration_ms is not None:
