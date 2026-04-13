@@ -23,7 +23,7 @@ DURATION_REGEX = re.compile(
 )
 DISTANCE_REGEX = re.compile(
     r"\b(?:(?:for|move|go)\s+)?(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
-    r"(?P<unit>centimeter|centimeters|centimetre|centimetres|cm|inch|inches|in)\b"
+    r"(?P<unit>centimeter|centimeters|centimetre|centimetres|cm|inch|inches|in|foot|feet|ft)\b"
 )
 
 NUMBER_WORDS = {
@@ -132,6 +132,8 @@ def _distance_to_inches(value: float, unit: str) -> float:
     normalized_unit = unit.strip().lower()
     if normalized_unit in {"inch", "inches", "in"}:
         return value
+    if normalized_unit in {"foot", "feet", "ft"}:
+        return value * 12.0
     return value / 2.54
 
 
