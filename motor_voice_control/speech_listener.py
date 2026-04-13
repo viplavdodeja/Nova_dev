@@ -9,7 +9,7 @@ from collections import deque
 from pathlib import Path
 
 from command_parser import contains_emergency_stop, contains_wake_phrase, normalize_text
-from config import MIC_DEVICE_INDEX, STT_BLOCK_SIZE, STT_LISTEN_TIMEOUT_SECONDS, STT_SAMPLE_RATE, VOSK_MODEL_PATH
+from config import COMMAND_LISTEN_TIMEOUT_SECONDS, MIC_DEVICE_INDEX, STT_BLOCK_SIZE, STT_SAMPLE_RATE, VOSK_MODEL_PATH
 
 try:
     import sounddevice as sd
@@ -195,7 +195,7 @@ def create_listener() -> ContinuousVoskListener:
     return listener
 
 
-def listen_for_command(timeout_seconds: float = STT_LISTEN_TIMEOUT_SECONDS) -> str:
+def listen_for_command(timeout_seconds: float = COMMAND_LISTEN_TIMEOUT_SECONDS) -> str:
     """Convenience helper for one command capture session."""
     listener = create_listener()
     try:
