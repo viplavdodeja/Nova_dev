@@ -96,6 +96,8 @@ def run() -> None:
                     payload = f"{serial_command}{duration_ms}"
                 print(f"Sending motion payload: {payload}")
                 motor.send_message(payload)
+                if duration_ms is None:
+                    motor.set_led_state(LED_IDLE)
                 previous_passive_text = ""
                 continue
 
