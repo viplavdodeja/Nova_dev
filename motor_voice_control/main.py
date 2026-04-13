@@ -10,25 +10,26 @@ from command_parser import (
 )
 from config import (
     BAUD_RATE,
-    COMMAND_CLIP_DURATION_SECONDS,
-    PASSIVE_CLIP_DURATION_SECONDS,
+    COMMAND_LISTEN_TIMEOUT_SECONDS,
     SERIAL_PORT,
     SERIAL_TIMEOUT_SECONDS,
     WAKE_REQUIRED_HITS,
 )
 from motor_serial import MotorController
-from speech_listener import WhisperCppListener
+from speech_listener import ContinuousVoskListener
 
 LED_IDLE = "LED_READY"
 LED_COMMAND = "LED_LISTEN"
 
 
 def run() -> None:
-    """Run passive listening and command mode loops."""
-    listener = WhisperCppListener()
+    """Run continuous passive listening with rolling command capture."""
+    listener = ContinuousVoskListener()
     ok, message = listener.validate_environment()
     if not ok:
         print(message)
+        return
+    if not listener.start():
         return
 
     motor = MotorController(
@@ -37,6 +38,7 @@ def run() -> None:
         timeout_seconds=SERIAL_TIMEOUT_SECONDS,
     )
     if not motor.connect():
+        listener.stop()
         return
     motor.set_led_state(LED_IDLE)
 
@@ -48,12 +50,7 @@ def run() -> None:
 
     try:
         while True:
-            current_passive_text = normalize_text(
-                listener.listen_once(
-                    PASSIVE_CLIP_DURATION_SECONDS,
-                    command_mode=False,
-                )
-            )
+            current_passive_text = normalize_text(listener.listen_for_passive_trigger())
             if current_passive_text:
                 print(f"Heard (passive): {current_passive_text}")
 
@@ -80,12 +77,7 @@ def run() -> None:
                 previous_passive_text = ""
                 motor.set_led_state(LED_COMMAND)
                 print("Listening for command...")
-                command_text = normalize_text(
-                    listener.listen_once(
-                        COMMAND_CLIP_DURATION_SECONDS,
-                        command_mode=True,
-                    )
-                )
+                command_text = normalize_text(listener.listen_for_command(COMMAND_LISTEN_TIMEOUT_SECONDS))
                 if command_text:
                     print(f"Heard (command): {command_text}")
 
@@ -114,6 +106,7 @@ def run() -> None:
     finally:
         motor.set_led_state(LED_IDLE)
         motor.close()
+        listener.stop()
 
 
 if __name__ == "__main__":

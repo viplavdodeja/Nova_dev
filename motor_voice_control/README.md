@@ -1,16 +1,16 @@
-# Motor Voice Control (Pi Side, whisper.cpp)
+# Motor Voice Control (Pi Side, continuous Vosk)
 
 ## Overview
-This project runs on Raspberry Pi and sends one-letter motor commands to an Arduino over serial, based on microphone speech.
+This project runs on Raspberry Pi and sends motor and servo commands to an Arduino over serial, based on live microphone speech.
 
 Pipeline:
-1. Record short WAV clips using `arecord`
-2. Transcribe clips using `whisper.cpp` CLI
-3. Detect emergency stop and wake phrase
-4. Parse movement commands
-5. Send command letters over serial to Arduino
+1. Continuously stream microphone audio in memory
+2. Use Vosk for always-on passive wake and emergency-stop detection
+3. Switch to rolling command capture after wake
+4. Parse command text into motion or servo payloads
+5. Send serial payloads to Arduino
 
-No Arduino code, no TTS, no UI, no LLM.
+No TTS, no UI, no LLM.
 
 ## Serial Command Mapping
 - `F` = forward
@@ -34,20 +34,11 @@ The Pi also sends LED state tokens to Arduino:
 
 ## Project Files
 - `main.py`: app loop (passive mode + command mode)
-- `speech_listener.py`: recording + whisper.cpp transcription
+- `speech_listener.py`: continuous Vosk microphone stream for wake and command capture
 - `command_parser.py`: wake phrase/emergency/command parsing
 - `motor_serial.py`: serial connection and command sending
 - `config.py`: all config values
 - `requirements.txt`: Python deps
-- `audio_files/`: recorded WAV clips (created automatically)
-
-## Linux Packages
-Install ALSA tools for microphone recording:
-
-```bash
-sudo apt update
-sudo apt install -y alsa-utils
-```
 
 ## Python Environment Setup
 From your project folder:
@@ -60,39 +51,16 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+Download a Vosk model into this directory or update `VOSK_MODEL_PATH` in `config.py` to point at the model location.
+
 ## Verify Microphone Devices
 List capture devices:
 
 ```bash
-arecord -l
+python3 -c "import sounddevice as sd; print(sd.query_devices())"
 ```
 
-Set `ARECORD_DEVICE` in `config.py` to a stable capture target, typically:
-- `plughw:1,0` (recommended for USB mics on Pi)
-- `hw:1,0` (raw hardware device)
-
-## Verify whisper.cpp Manually
-Record a quick sample:
-
-```bash
-arecord -D default -f S16_LE -r 16000 -c 1 -d 3 test.wav
-```
-
-Recommended stable format/device test:
-
-```bash
-arecord -D plughw:1,0 -f S16_LE -r 16000 -c 1 -d 3 test.wav
-```
-
-Run whisper.cpp manually:
-
-```bash
-/home/pi/whisper.cpp/build/bin/whisper-cli \
-  -m /home/pi/whisper.cpp/models/ggml-base.en.bin \
-  -f test.wav -l en --no-timestamps
-```
-
-If this works, update those paths in `config.py`.
+Set `MIC_DEVICE_INDEX` in `config.py` if your microphone is not the default input.
 
 ## Configure Before Running
 Edit these in `config.py`:
@@ -100,14 +68,12 @@ Edit these in `config.py`:
 - `BAUD_RATE` (default `9600`)
 - `WAKE_PHRASE` (default `hey nova`)
 - `WAKE_REQUIRED_HITS` (set `2` to reduce false wake triggers)
-- `PASSIVE_CLIP_DURATION_SECONDS`
-- `COMMAND_CLIP_DURATION_SECONDS`
-- `WHISPER_EXECUTABLE_PATH`
-- `WHISPER_MODEL_PATH`
-- `WHISPER_THREADS`
-- `ENABLE_PASSIVE_VAD` / `WHISPER_VAD_MODEL_PATH`
-- `ENABLE_COMMAND_GRAMMAR` / `COMMAND_GRAMMAR_PATH`
-- `TEMP_AUDIO_DIR`
+- `PASSIVE_LISTEN_TIMEOUT_SECONDS`
+- `COMMAND_LISTEN_TIMEOUT_SECONDS`
+- `VOSK_MODEL_PATH`
+- `MIC_DEVICE_INDEX`
+- `STT_SAMPLE_RATE`
+- `STT_BLOCK_SIZE`
 
 ## Run the App
 
@@ -132,12 +98,11 @@ Typical output includes:
 - Passive mode always listens for `"stop"` and sends `X` immediately.
 - Passive mode listens for wake phrase `"hey nova"`.
 - Wake phrase matching handles punctuation variants such as `hey, nova`.
-- Passive mode uses phrase buffering across chunks (`previous + current`) to catch split phrases.
-- After wake phrase, one command clip is recorded and parsed.
+- Passive listening is continuous and does not rely on temporary WAV files.
+- After wake phrase, a rolling command capture session begins on the live stream.
 - Idle LED is controlled by `LED_READY`.
 - Command-mode LED is controlled by `LED_LISTEN`.
 - Moving LED is controlled by the Arduino when a motion command starts and ends.
-- Command mode can use grammar-constrained decoding for better command accuracy.
 - Command mode supports:
 - `forward -> F`
 - `backward/back/reverse -> B`

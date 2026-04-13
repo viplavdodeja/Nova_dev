@@ -1,190 +1,204 @@
-"""Speech listener based on arecord + whisper.cpp CLI."""
+"""Continuous Vosk-based speech listener for wake and command capture."""
 
 from __future__ import annotations
 
-import re
-import shutil
-import subprocess
-import math
+import json
+import queue
+import time
+from collections import deque
 from pathlib import Path
-from uuid import uuid4
 
-from config import (
-    ARECORD_CHANNELS,
-    ARECORD_DEVICE,
-    ARECORD_FORMAT,
-    ARECORD_SAMPLE_RATE,
-    COMMAND_GRAMMAR_PATH,
-    ENABLE_COMMAND_GRAMMAR,
-    ENABLE_PASSIVE_VAD,
-    TEMP_AUDIO_DIR,
-    WHISPER_EXECUTABLE_PATH,
-    WHISPER_LANGUAGE,
-    WHISPER_MODEL_PATH,
-    WHISPER_THREADS,
-    WHISPER_VAD_MODEL_PATH,
-    WHISPER_VAD_THRESHOLD,
-)
+from command_parser import contains_emergency_stop, contains_wake_phrase, normalize_text
+from config import MIC_DEVICE_INDEX, STT_BLOCK_SIZE, STT_LISTEN_TIMEOUT_SECONDS, STT_SAMPLE_RATE, VOSK_MODEL_PATH
+
+try:
+    import sounddevice as sd
+except ImportError:  # pragma: no cover - environment dependent
+    sd = None
+
+try:
+    from vosk import KaldiRecognizer, Model, SetLogLevel
+except ImportError:  # pragma: no cover - environment dependent
+    KaldiRecognizer = None
+    Model = None
+    SetLogLevel = None
 
 
-class WhisperCppListener:
-    """STT adapter that can be swapped later for another backend."""
+class ContinuousVoskListener:
+    """Always-on microphone stream with blocking wake and command helpers."""
 
     def __init__(self) -> None:
-        self.audio_dir = TEMP_AUDIO_DIR
-        self.whisper_executable = Path(WHISPER_EXECUTABLE_PATH)
-        self.whisper_model = Path(WHISPER_MODEL_PATH)
+        self._model_path = Path(VOSK_MODEL_PATH)
+        self._sample_rate = STT_SAMPLE_RATE
+        self._block_size = STT_BLOCK_SIZE
+        self._device_index = MIC_DEVICE_INDEX
+
+        self._model: Model | None = None
+        self._audio_queue: queue.Queue[bytes] = queue.Queue(maxsize=64)
+        self._stream = None
+        self._started = False
 
     def validate_environment(self) -> tuple[bool, str]:
-        """Validate required binaries and model path."""
-        if shutil.which("arecord") is None:
-            return False, "Missing microphone tool: arecord not found"
-        if not self.whisper_executable.exists():
-            return False, f"Missing whisper.cpp executable: {self.whisper_executable}"
-        if not self.whisper_model.exists():
-            return False, f"Missing whisper model path: {self.whisper_model}"
+        """Validate microphone/STT dependencies and model path."""
+        if sd is None:
+            return False, "Missing dependency: sounddevice is not installed"
+        if Model is None or KaldiRecognizer is None:
+            return False, "Missing dependency: vosk is not installed"
+        if not self._model_path.exists():
+            return False, f"Missing Vosk model path: {self._model_path}"
         return True, ""
 
-    def record_audio(self, output_path: Path, duration_seconds: float) -> bool:
-        """Record one WAV chunk with arecord."""
-        # arecord expects an integer duration for -d on many Linux builds.
-        duration_whole_seconds = max(1, int(math.ceil(float(duration_seconds))))
-        cmd = [
-            "arecord",
-            "-D",
-            ARECORD_DEVICE,
-            "-f",
-            ARECORD_FORMAT,
-            "-r",
-            str(ARECORD_SAMPLE_RATE),
-            "-c",
-            str(ARECORD_CHANNELS),
-            "-d",
-            str(duration_whole_seconds),
-            "-q",
-            str(output_path),
-        ]
-        try:
-            result = subprocess.run(cmd, check=False, capture_output=True, text=True)
-        except FileNotFoundError:
-            print("Missing microphone recording tool: arecord")
+    def start(self) -> bool:
+        """Start the continuous microphone stream."""
+        ok, message = self.validate_environment()
+        if not ok:
+            print(message)
             return False
-        except Exception as exc:
-            print(f"arecord execution error: {exc}")
-            return False
-
-        if result.returncode != 0:
-            err = (result.stderr or "").strip()
-            print(f"arecord failed: {err or 'unknown error'}")
-            return False
-        return output_path.exists()
-
-    def _build_whisper_command(self, audio_path: Path, command_mode: bool, use_grammar: bool = True) -> list[str]:
-        """Build whisper.cpp command with mode-specific options."""
-        cmd = [
-            str(self.whisper_executable),
-            "-m",
-            str(self.whisper_model),
-            "-f",
-            str(audio_path),
-            "-l",
-            WHISPER_LANGUAGE,
-            "-t",
-            str(WHISPER_THREADS),
-            "--no-timestamps",
-            "--print-progress",
-            "false",
-            "--no-prints",
-        ]
-
-        if not command_mode and ENABLE_PASSIVE_VAD:
-            cmd.append("--vad")
-            if WHISPER_VAD_MODEL_PATH:
-                vad_path = Path(WHISPER_VAD_MODEL_PATH)
-                if vad_path.exists():
-                    cmd.extend(["--vad-model", str(vad_path)])
-            cmd.extend(["--vad-threshold", str(WHISPER_VAD_THRESHOLD)])
-
-        if command_mode and use_grammar and ENABLE_COMMAND_GRAMMAR and COMMAND_GRAMMAR_PATH.exists():
-            cmd.extend(["--grammar", str(COMMAND_GRAMMAR_PATH)])
-
-        return cmd
-
-    def transcribe_audio(self, audio_path: Path, command_mode: bool = False) -> str:
-        """Transcribe a WAV file via whisper.cpp CLI."""
-        cmd = self._build_whisper_command(audio_path=audio_path, command_mode=command_mode)
 
         try:
-            result = subprocess.run(cmd, check=False, capture_output=True, text=True)
-        except Exception as exc:
-            print(f"whisper.cpp execution failure: {exc}")
-            return ""
-
-        # If grammar causes a failure, retry once without grammar.
-        if result.returncode != 0 and command_mode and ENABLE_COMMAND_GRAMMAR:
-            fallback_cmd = self._build_whisper_command(
-                audio_path=audio_path,
-                command_mode=True,
-                use_grammar=False,
+            if SetLogLevel is not None:
+                SetLogLevel(-1)
+            self._model = Model(str(self._model_path))
+            self._stream = sd.RawInputStream(
+                samplerate=self._sample_rate,
+                blocksize=self._block_size,
+                dtype="int16",
+                channels=1,
+                callback=self._audio_callback,
+                device=self._device_index,
             )
+            self._stream.start()
+            self._started = True
+            return True
+        except Exception as exc:
+            print(f"Audio stream start failure: {exc}")
+            self.stop()
+            return False
+
+    def stop(self) -> None:
+        """Stop the microphone stream and clear buffered audio."""
+        try:
+            if self._stream is not None:
+                self._stream.stop()
+                self._stream.close()
+        except Exception:
+            pass
+        finally:
+            self._stream = None
+            self._started = False
+            self._clear_audio_queue()
+
+    def listen_for_passive_trigger(self) -> str:
+        """Block until wake phrase or emergency stop is heard in the live stream."""
+        recognizer = self._new_recognizer()
+        recent_segments: deque[str] = deque(maxlen=4)
+
+        while self._started:
             try:
-                result = subprocess.run(fallback_cmd, check=False, capture_output=True, text=True)
-            except Exception:
+                chunk = self._audio_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            if recognizer.AcceptWaveform(chunk):
+                text = self._extract_text(recognizer.Result())
+                if text:
+                    recent_segments.append(text)
+                    combined = normalize_text(" ".join(recent_segments))
+                    if contains_emergency_stop(combined) or contains_wake_phrase(combined):
+                        return combined
+            else:
+                partial = self._extract_text(recognizer.PartialResult(), key="partial")
+                if partial:
+                    combined = normalize_text(" ".join([*recent_segments, partial]))
+                    if contains_emergency_stop(combined) or contains_wake_phrase(combined):
+                        return combined
+
+        return ""
+
+    def listen_for_command(self, timeout_seconds: float) -> str:
+        """Capture rolling command speech from the live stream without reopening audio."""
+        recognizer = self._new_recognizer()
+        deadline = time.monotonic() + max(timeout_seconds, 0.1)
+        best_final = ""
+        best_partial = ""
+        speech_started = False
+        last_voice_time = time.monotonic()
+
+        while self._started and time.monotonic() < deadline:
+            try:
+                chunk = self._audio_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            if recognizer.AcceptWaveform(chunk):
+                text = self._extract_text(recognizer.Result())
+                if text:
+                    best_final = text
+                    speech_started = True
+                    last_voice_time = time.monotonic()
+            else:
+                partial = self._extract_text(recognizer.PartialResult(), key="partial")
+                if partial:
+                    best_partial = partial
+                    speech_started = True
+                    last_voice_time = time.monotonic()
+                elif speech_started and (time.monotonic() - last_voice_time) > 0.6:
+                    break
+
+        final_text = self._extract_text(recognizer.FinalResult())
+        if final_text:
+            best_final = final_text
+
+        return normalize_text(best_final or best_partial)
+
+    def _audio_callback(self, indata, frames, time_info, status) -> None:  # noqa: ARG002
+        if status:
+            return
+        try:
+            self._audio_queue.put_nowait(bytes(indata))
+        except queue.Full:
+            try:
+                self._audio_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._audio_queue.put_nowait(bytes(indata))
+            except queue.Full:
                 pass
 
-        if result.returncode != 0:
-            err = (result.stderr or "").strip()
-            print(f"whisper.cpp failed: {err or 'unknown error'}")
-            return ""
+    def _new_recognizer(self) -> KaldiRecognizer:
+        if self._model is None:
+            raise RuntimeError("Speech listener has not been started.")
+        return KaldiRecognizer(self._model, self._sample_rate)
 
-        transcript = self._extract_transcript(result.stdout)
-        return transcript.lower().strip()
-
-    def listen_once(self, duration_seconds: float, command_mode: bool = False) -> str:
-        """Record and transcribe one short clip, then return transcript."""
-        self.audio_dir.mkdir(parents=True, exist_ok=True)
-        file_name = f"clip_{uuid4().hex}.wav"
-        wav_path = self.audio_dir / file_name
-
-        if not self.record_audio(wav_path, duration_seconds):
-            return ""
-
-        transcript = self.transcribe_audio(wav_path, command_mode=command_mode)
-        return transcript
+    def _clear_audio_queue(self) -> None:
+        while True:
+            try:
+                self._audio_queue.get_nowait()
+            except queue.Empty:
+                break
 
     @staticmethod
-    def _extract_transcript(stdout_text: str) -> str:
-        """Extract transcript from whisper.cpp output."""
-        lines = [line.strip() for line in (stdout_text or "").splitlines() if line.strip()]
-        if not lines:
+    def _extract_text(raw_json: str, key: str = "text") -> str:
+        try:
+            parsed = json.loads(raw_json)
+        except json.JSONDecodeError:
             return ""
-
-        candidates: list[str] = []
-        for line in lines:
-            cleaned = re.sub(r"^\[[^\]]+\]\s*", "", line)
-            cleaned = re.sub(r"^\(\d+%\)\s*", "", cleaned)
-            cleaned = cleaned.strip()
-            if not cleaned:
-                continue
-            if cleaned.lower().startswith("system_info"):
-                continue
-            if cleaned.lower().startswith("main:"):
-                continue
-            candidates.append(cleaned)
-
-        return " ".join(candidates).strip()
+        return normalize_text(str(parsed.get(key, "")).strip())
 
 
-def record_audio(output_path: Path, duration_seconds: float) -> bool:
-    """Module-level helper requested by spec."""
-    return WhisperCppListener().record_audio(output_path=output_path, duration_seconds=duration_seconds)
+def create_listener() -> ContinuousVoskListener:
+    """Create and return a live Vosk listener."""
+    listener = ContinuousVoskListener()
+    if not listener.start():
+        raise RuntimeError("Could not start continuous Vosk listener.")
+    return listener
 
 
-def transcribe_audio(audio_path: Path) -> str:
-    """Module-level helper requested by spec."""
-    return WhisperCppListener().transcribe_audio(audio_path=audio_path)
-
-
-def listen_once(duration_seconds: float) -> str:
-    """Module-level helper requested by spec."""
-    return WhisperCppListener().listen_once(duration_seconds=duration_seconds)
+def listen_for_command(timeout_seconds: float = STT_LISTEN_TIMEOUT_SECONDS) -> str:
+    """Convenience helper for one command capture session."""
+    listener = create_listener()
+    try:
+        return listener.listen_for_command(timeout_seconds)
+    finally:
+        listener.stop()
