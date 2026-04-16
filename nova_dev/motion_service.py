@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import re
 import threading
 from queue import Queue
 
 import serial
+from serial.tools import list_ports
 
 from config import RuntimeConfig
 from events import Event, EventType
@@ -21,19 +23,65 @@ class ArduinoSerialClient:
         self._timeout_seconds = timeout_seconds
         self._connection: serial.Serial | None = None
 
+    def _candidate_ports(self) -> list[str]:
+        """Return ordered serial port candidates for Raspberry Pi/Linux setups."""
+        configured = self._port.strip()
+        candidates: list[str] = []
+
+        if configured and configured.lower() != "auto":
+            candidates.append(configured)
+
+        discovered = sorted(
+            port.device
+            for port in list_ports.comports()
+            if port.device.startswith("/dev/ttyUSB")
+            or port.device.startswith("/dev/ttyACM")
+            or port.device.startswith("/dev/serial/by-id/")
+        )
+
+        for device in discovered:
+            if device not in candidates:
+                candidates.append(device)
+
+        for pattern in ("/dev/serial/by-id/*", "/dev/ttyACM*", "/dev/ttyUSB*"):
+            for path in sorted(Path("/").glob(pattern.lstrip("/"))):
+                device = str(path)
+                if device not in candidates:
+                    candidates.append(device)
+
+        return candidates
+
     def connect(self) -> bool:
-        try:
-            self._connection = serial.Serial(
-                port=self._port,
-                baudrate=self._baud_rate,
-                timeout=self._timeout_seconds,
+        candidates = self._candidate_ports()
+        if not candidates:
+            print(
+                "[Serial] Connection error: no candidate ports found. "
+                "Check `ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null` "
+                "or set NOVA_SERIAL_PORT explicitly."
             )
-            print(f"[Serial] Connected to Arduino on {self._port} @ {self._baud_rate}")
-            return True
-        except Exception as exc:
-            print(f"[Serial] Connection error: {exc}")
             self._connection = None
             return False
+
+        last_error: Exception | None = None
+        for candidate in candidates:
+            try:
+                self._connection = serial.Serial(
+                    port=candidate,
+                    baudrate=self._baud_rate,
+                    timeout=self._timeout_seconds,
+                )
+                self._port = candidate
+                print(f"[Serial] Connected to Arduino on {candidate} @ {self._baud_rate}")
+                return True
+            except Exception as exc:
+                last_error = exc
+
+        print(
+            "[Serial] Connection error: could not open any detected port "
+            f"{candidates}. Last error: {last_error}"
+        )
+        self._connection = None
+        return False
 
     def send_message(self, message: str) -> bool:
         if self._connection is None or not self._connection.is_open:

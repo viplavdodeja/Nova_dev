@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass, field
 
 
@@ -9,7 +11,7 @@ from dataclasses import dataclass, field
 class RuntimeConfig:
     """Coordinator-level runtime settings."""
 
-    serial_port: str = "/dev/ttyUSB0"
+    serial_port: str = os.getenv("NOVA_SERIAL_PORT", "auto")
     baud_rate: int = 9600
     serial_timeout_seconds: float = 1.0
 
