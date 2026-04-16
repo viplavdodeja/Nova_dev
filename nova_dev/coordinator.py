@@ -26,6 +26,8 @@ class Coordinator:
         self.latest_scene_text = "Scene unavailable."
         self.latest_detections: list[dict] = []
         self._last_cv_cycle = 0.0
+        self._last_autonomous_action_time = 0.0
+        self._last_autonomous_scene_text = ""
 
         self.serial_client = ArduinoSerialClient(
             port=self.config.serial_port,
@@ -164,6 +166,32 @@ class Coordinator:
         self.vision_service.resume_inference()
         self.motion_service.set_led_state("LED_READY")
 
+    def _maybe_execute_autonomous_plan(self) -> None:
+        if not self.config.autonomous_cv_enabled:
+            return
+        if self.state != RobotState.OBSERVE:
+            return
+        if not self.latest_detections:
+            return
+
+        now = time.monotonic()
+        if now - self._last_autonomous_action_time < self.config.autonomous_cv_cooldown_seconds:
+            return
+        if self.latest_scene_text == self._last_autonomous_scene_text:
+            return
+
+        plan = self.llm_service.plan_from_scene(self.latest_scene_text, self.latest_detections)
+        print(f"[Autonomy] Plan: {plan}")
+
+        if plan.get("type") == "noop":
+            self._last_autonomous_scene_text = self.latest_scene_text
+            self._last_autonomous_action_time = now
+            return
+
+        self._last_autonomous_scene_text = self.latest_scene_text
+        self._last_autonomous_action_time = now
+        self._execute_plan(plan)
+
     def _build_timed_motion_payload(self, action: str, duration_ms: int) -> str | None:
         prefix_map = {
             "forward": "F",
@@ -203,6 +231,7 @@ class Coordinator:
         self.latest_scene_text = scene_text
         self.latest_detections = detections
         print(f"[Vision] {scene_text}")
+        self._maybe_execute_autonomous_plan()
 
     def run_forever(self) -> None:
         self.start()

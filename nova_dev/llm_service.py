@@ -97,6 +97,29 @@ class LLMService:
         )
         return self._call_ollama(prompt, num_predict=80)
 
+    def plan_from_scene(self, scene_text: str, detections: list[dict] | None = None) -> dict:
+        detection_summary = self._format_detections(detections or [])
+        prompt = (
+            "You are the autonomous planning layer for NOVA.\n"
+            "Decide one safe high-level action based only on the current camera scene.\n"
+            "Never output raw serial commands.\n"
+            "Choose exactly one JSON object with this schema:\n"
+            '{"type":"noop"}\n'
+            '{"type":"motion","action":"forward|backward|turn_left|turn_right|spin_left|spin_right|stop"}\n'
+            '{"type":"servo_named","action":"look_left|look_right|look_center"}\n'
+            '{"type":"speak","text":"short sentence"}\n'
+            "Rules:\n"
+            "- Prefer noop if the scene does not justify action.\n"
+            "- Do not claim distance or depth.\n"
+            "- Use motion only for cautious exploratory behavior.\n"
+            "- If a person is visible, prefer look_center or a short spoken acknowledgement over aggressive motion.\n"
+            f"Scene: {scene_text.strip()}\n"
+            f"Detections: {detection_summary}\n"
+            "JSON:"
+        )
+        raw = self._call_ollama(prompt, num_predict=80)
+        return self._parse_autonomous_plan(raw)
+
     def _call_ollama(self, prompt: str, num_predict: int = 80) -> str:
         payload = {
             "model": self._config.ollama_model,
@@ -131,6 +154,59 @@ class LLMService:
             return "[LLM ERROR] Received malformed JSON from Ollama."
         text = str(data.get("response", "")).strip()
         return text or "[LLM ERROR] Ollama returned an empty response."
+
+    @staticmethod
+    def _format_detections(detections: list[dict]) -> str:
+        if not detections:
+            return "none"
+        parts = []
+        for item in detections[:6]:
+            label = str(item.get("label", "unknown")).strip() or "unknown"
+            confidence = item.get("confidence")
+            frames_seen = item.get("frames_seen")
+            parts.append(f"{label} conf={confidence} frames={frames_seen}")
+        return "; ".join(parts)
+
+    @staticmethod
+    def _extract_json_object(raw: str) -> str | None:
+        if not raw:
+            return None
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+        if fenced:
+            return fenced.group(1)
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        return raw[start : end + 1]
+
+    def _parse_autonomous_plan(self, raw: str) -> dict:
+        json_blob = self._extract_json_object(raw)
+        if json_blob is None:
+            return {"type": "noop"}
+        try:
+            parsed = json.loads(json_blob)
+        except json.JSONDecodeError:
+            return {"type": "noop"}
+
+        plan_type = str(parsed.get("type", "noop")).strip().lower()
+        if plan_type == "motion":
+            action = str(parsed.get("action", "")).strip().lower()
+            if action in {"forward", "backward", "turn_left", "turn_right", "spin_left", "spin_right", "stop"}:
+                return {"type": "motion", "action": action}
+            return {"type": "noop"}
+
+        if plan_type == "servo_named":
+            action = str(parsed.get("action", "")).strip().lower()
+            if action in {"look_left", "look_right", "look_center"}:
+                return {"type": "servo_named", "action": action}
+            return {"type": "noop"}
+
+        if plan_type == "speak":
+            text = str(parsed.get("text", "")).strip()
+            return {"type": "speak", "text": text[:160]} if text else {"type": "noop"}
+
+        return {"type": "noop"}
 
     @staticmethod
     def _normalize_text(text: str) -> str:

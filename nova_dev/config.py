@@ -7,6 +7,13 @@ import os
 from dataclasses import dataclass, field
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(slots=True)
 class RuntimeConfig:
     """Coordinator-level runtime settings."""
@@ -32,6 +39,8 @@ class RuntimeConfig:
     observe_loop_delay_seconds: float = 0.25
     cv_cycle_interval_seconds: float = 2.0
     target_label: str = "person"
+    autonomous_cv_enabled: bool = _env_flag("NOVA_AUTONOMOUS_CV_ENABLED", False)
+    autonomous_cv_cooldown_seconds: float = 6.0
 
     speech_enabled: bool = True
     tts_enabled: bool = True
