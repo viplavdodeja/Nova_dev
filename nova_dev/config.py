@@ -18,7 +18,7 @@ class RuntimeConfig:
     wake_phrase: str = "hey nova"
     passive_listen_timeout_seconds: float = 2.0
     command_listen_timeout_seconds: float = 4.0
-    vosk_model_path: str = "vosk-model-small-en-us-0.15"
+    vosk_model_path: str = os.getenv("NOVA_VOSK_MODEL_PATH", "vosk-model-small-en-us-0.15")
     mic_device_index: int | None = None
     stt_sample_rate: int = 16000
     stt_block_size: int = 8000

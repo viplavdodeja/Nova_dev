@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import queue
 import re
 import time
@@ -38,15 +39,19 @@ class AudioService:
     def __init__(self, event_queue: Queue[Event], config: RuntimeConfig) -> None:
         self._event_queue = event_queue
         self._config = config
+        self._model_path = self._resolve_model_path(config.vosk_model_path)
         self._model = None
         self._enabled = False
 
     def start(self) -> None:
         if sd is None or Model is None or KaldiRecognizer is None:
             raise RuntimeError("vosk/sounddevice dependencies are missing.")
+        missing_reason = self._model_path_error()
+        if missing_reason is not None:
+            raise RuntimeError(missing_reason)
         if SetLogLevel is not None:
             SetLogLevel(-1)
-        self._model = Model(self._config.vosk_model_path)
+        self._model = Model(str(self._model_path))
         self._enabled = True
 
     def stop(self) -> None:
@@ -125,3 +130,28 @@ class AudioService:
         final_result = json.loads(recognizer.FinalResult())
         final_text = str(final_result.get("text", "")).strip()
         return final_text or partial_text or None
+
+    @staticmethod
+    def _resolve_model_path(configured_path: str) -> Path:
+        candidate = Path(configured_path).expanduser()
+        if candidate.is_absolute():
+            return candidate
+        service_dir = Path(__file__).resolve().parent
+        return (service_dir / candidate).resolve()
+
+    def _model_path_error(self) -> str | None:
+        if not self._model_path.exists():
+            return (
+                f"Missing Vosk model path: {self._model_path}. "
+                "Set NOVA_VOSK_MODEL_PATH to the extracted Vosk model directory."
+            )
+        if not self._model_path.is_dir():
+            return f"Vosk model path is not a directory: {self._model_path}"
+        required_entries = ("am", "conf", "graph", "ivector")
+        missing_entries = [name for name in required_entries if not (self._model_path / name).exists()]
+        if missing_entries:
+            return (
+                f"Vosk model folder is incomplete: {self._model_path}. "
+                f"Missing expected entries: {', '.join(missing_entries)}"
+            )
+        return None
