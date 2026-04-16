@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import serial
+from serial.tools import list_ports
 
 
 class MotorController:
@@ -14,20 +17,71 @@ class MotorController:
         self._timeout_seconds = timeout_seconds
         self._serial_connection: serial.Serial | None = None
 
+    def _candidate_ports(self) -> list[str]:
+        """Return ordered serial port candidates for Linux SBC setups."""
+        configured = self._port.strip()
+        candidates: list[str] = []
+
+        if configured and configured.lower() != "auto":
+            candidates.append(configured)
+
+        discovered = sorted(
+            port.device
+            for port in list_ports.comports()
+            if port.device.startswith("/dev/ttyUSB")
+            or port.device.startswith("/dev/ttyACM")
+            or port.device.startswith("/dev/serial/by-id/")
+        )
+
+        for device in discovered:
+            if device not in candidates:
+                candidates.append(device)
+
+        fallback_patterns = (
+            "/dev/serial/by-id/*",
+            "/dev/ttyACM*",
+            "/dev/ttyUSB*",
+        )
+        for pattern in fallback_patterns:
+            for path in sorted(Path("/").glob(pattern.lstrip("/"))):
+                device = str(path)
+                if device not in candidates:
+                    candidates.append(device)
+
+        return candidates
+
     def connect(self) -> bool:
         """Open serial connection; return True on success."""
-        try:
-            self._serial_connection = serial.Serial(
-                port=self._port,
-                baudrate=self._baud_rate,
-                timeout=self._timeout_seconds,
+        candidates = self._candidate_ports()
+        if not candidates:
+            print(
+                "Serial connection error: no candidate ports found. "
+                "Check `ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null` "
+                "or set NOVA_SERIAL_PORT explicitly."
             )
-            print(f"Connected to Arduino on {self._port} @ {self._baud_rate}")
-            return True
-        except Exception as exc:
-            print(f"Serial connection error: {exc}")
             self._serial_connection = None
             return False
+
+        last_error: Exception | None = None
+        for candidate in candidates:
+            try:
+                self._serial_connection = serial.Serial(
+                    port=candidate,
+                    baudrate=self._baud_rate,
+                    timeout=self._timeout_seconds,
+                )
+                self._port = candidate
+                print(f"Connected to Arduino on {candidate} @ {self._baud_rate}")
+                return True
+            except Exception as exc:
+                last_error = exc
+
+        print(
+            "Serial connection error: could not open any detected port "
+            f"{candidates}. Last error: {last_error}"
+        )
+        self._serial_connection = None
+        return False
 
     def send_command(self, letter: str) -> bool:
         """Send a single-letter command over serial."""

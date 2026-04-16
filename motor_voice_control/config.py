@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
 # Serial link to Arduino.
-SERIAL_PORT = "/dev/ttyUSB0"
+# Override with NOVA_SERIAL_PORT if needed. Use "auto" to probe common Linux ports.
+SERIAL_PORT = os.getenv("NOVA_SERIAL_PORT", "auto")
 BAUD_RATE = 9600
 SERIAL_TIMEOUT_SECONDS = 1.0
 
