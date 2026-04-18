@@ -14,6 +14,13 @@ SERIAL_TIMEOUT_SECONDS = 1.0
 WAKE_PHRASE = "hey nova"
 PASSIVE_LISTEN_TIMEOUT_SECONDS = 2.0
 COMMAND_LISTEN_TIMEOUT_SECONDS = 4.0
+GREETING_COMMANDS = (
+    "hello",
+    "good morning",
+    "good afternoon",
+    "good evening",
+)
+GREETING_LOOK_PAUSE_SECONDS = 1.0
 
 # Require N wake detections before entering command mode.
 # Set to 2 for fewer false wakes in noisy spaces.

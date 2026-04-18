@@ -9,6 +9,7 @@ from config import (
     BACKWARD_DISTANCE_CALIBRATION_IN,
     FORWARD_DEFAULT_MS,
     FORWARD_DISTANCE_CALIBRATION_IN,
+    GREETING_COMMANDS,
     SPIN_360_DEFAULT_MS,
     TURN_LEFT_DEFAULT_MS,
     TURN_RIGHT_DEFAULT_MS,
@@ -94,6 +95,18 @@ def contains_emergency_stop(text: str) -> bool:
     """Emergency stop is always active in passive mode."""
     normalized = normalize_text(text)
     return "stop" in normalized
+
+
+def parse_greeting_command(text: str) -> str | None:
+    """Return the matched greeting phrase when the transcript is a greeting."""
+    normalized = normalize_text(text)
+    if not normalized:
+        return None
+
+    for greeting in GREETING_COMMANDS:
+        if greeting in normalized:
+            return greeting
+    return None
 
 
 def _parse_duration_ms(text: str) -> int | None:

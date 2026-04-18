@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import time
+
 from command_parser import (
     contains_emergency_stop,
     contains_wake_phrase,
     normalize_text,
+    parse_greeting_command,
     parse_motor_command,
 )
 from config import (
     BAUD_RATE,
     COMMAND_LISTEN_TIMEOUT_SECONDS,
+    GREETING_LOOK_PAUSE_SECONDS,
     SERIAL_PORT,
     SERIAL_TIMEOUT_SECONDS,
+    SPIN_360_DEFAULT_MS,
     WAKE_REQUIRED_HITS,
 )
 from motor_serial import MotorController
@@ -20,6 +25,21 @@ from speech_listener import ContinuousVoskListener
 
 LED_IDLE = "LED_READY"
 LED_COMMAND = "LED_LISTEN"
+
+
+def execute_greeting_sequence(motor: MotorController) -> None:
+    """Run the greeting motion sequence using existing serial commands."""
+    sequence = (
+        ("LOOK_LEFT", GREETING_LOOK_PAUSE_SECONDS),
+        ("LOOK_RIGHT", GREETING_LOOK_PAUSE_SECONDS),
+        (f"SR{SPIN_360_DEFAULT_MS}", 0.0),
+    )
+
+    for payload, pause_seconds in sequence:
+        print(f"Sending greeting payload: {payload}")
+        motor.send_message(payload)
+        if pause_seconds > 0:
+            time.sleep(pause_seconds)
 
 
 def run() -> None:
@@ -80,6 +100,14 @@ def run() -> None:
                 command_text = normalize_text(listener.listen_for_command(COMMAND_LISTEN_TIMEOUT_SECONDS))
                 if command_text:
                     print(f"Heard (command): {command_text}")
+
+                greeting = parse_greeting_command(command_text)
+                if greeting is not None:
+                    print(f"Greeting recognized: {greeting}")
+                    execute_greeting_sequence(motor)
+                    motor.set_led_state(LED_IDLE)
+                    previous_passive_text = ""
+                    continue
 
                 parsed = parse_motor_command(command_text)
                 if parsed is None:

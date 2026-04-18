@@ -70,6 +70,8 @@ Edit these in `config.py`:
 - `WAKE_REQUIRED_HITS` (set `2` to reduce false wake triggers)
 - `PASSIVE_LISTEN_TIMEOUT_SECONDS`
 - `COMMAND_LISTEN_TIMEOUT_SECONDS`
+- `GREETING_COMMANDS`
+- `GREETING_LOOK_PAUSE_SECONDS`
 - `VOSK_MODEL_PATH`
 - `MIC_DEVICE_INDEX`
 - `STT_SAMPLE_RATE`
@@ -122,6 +124,10 @@ Typical output includes:
 - `look right -> LOOK_RIGHT`
 - `look forward -> LOOK_CENTER`
 - `stop -> X`
+- Greetings such as `hello`, `good morning`, `good afternoon`, and `good evening` trigger a sequence:
+- `LOOK_LEFT`, wait 1 second
+- `LOOK_RIGHT`, wait 1 second
+- `SR1030` for a 360 spin
 - Spoken distances are supported for forward/backward, such as `move forward 20 cm`, `go backward 12 inches`, or `forward for 10 cm`.
 - Distance commands now use lookup-table interpolation from the calibration arrays in `config.py`, not a single global speed constant.
 - Spoken durations are supported, such as `move forward for 1 second`, `turn left for 2 seconds`, or `spin for half second`.
