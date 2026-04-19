@@ -32,6 +32,7 @@ def execute_greeting_sequence(motor: MotorController) -> None:
     sequence = (
         ("LOOK_LEFT", GREETING_LOOK_PAUSE_SECONDS),
         ("LOOK_RIGHT", GREETING_LOOK_PAUSE_SECONDS),
+        ("LOOK_CENTER", GREETING_LOOK_PAUSE_SECONDS),
         (f"SR{SPIN_360_DEFAULT_MS}", 0.0),
     )
 
