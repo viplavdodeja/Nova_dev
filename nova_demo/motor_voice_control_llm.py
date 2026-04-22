@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import threading
@@ -84,6 +85,7 @@ def execute_greeting_sequence(send_payload) -> None:
 
 def run() -> None:
     """Run continuous passive listening with CV-aware LLM greeting speech."""
+    os.chdir(MOTOR_DIR)
     listener = ContinuousVoskListener()
     ok, message = listener.validate_environment()
     if not ok:
@@ -114,7 +116,11 @@ def run() -> None:
         with serial_lock:
             return motor.send_command(command)
 
-    tracker = ServoPersonTracker(send_payload=send_payload)
+    yolo_model_path = NOVA_TESTING_DIR.parent / "yolo11n.pt"
+    tracker = ServoPersonTracker(
+        send_payload=send_payload,
+        model_path=str(yolo_model_path) if yolo_model_path.exists() else "yolo11n.pt",
+    )
     send_led(LED_IDLE)
     tracker.start()
 
@@ -164,7 +170,10 @@ def run() -> None:
                     try:
                         execute_greeting_sequence(send_payload)
                     finally:
-                        tracker = ServoPersonTracker(send_payload=send_payload)
+                        tracker = ServoPersonTracker(
+                            send_payload=send_payload,
+                            model_path=str(yolo_model_path) if yolo_model_path.exists() else "yolo11n.pt",
+                        )
                         tracker.start()
                     send_led(LED_IDLE)
                     previous_passive_text = ""
