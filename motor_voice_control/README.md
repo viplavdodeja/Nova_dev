@@ -26,6 +26,12 @@ No TTS, no UI, no LLM.
 - `LOOK_RIGHT` = move camera servo right
 - `LOOK_CENTER` = center camera servo
 
+## Arduino Safety Stop
+The Arduino sketch `Arduino/motor_voice_LED.cpp` enforces an ultrasonic emergency stop.
+If the ultrasonic sensor on `PIN_ULTRASONIC` detects an object within 5 inches,
+the Arduino immediately stops the motors, cancels the active timed command, sets
+the LED to error/red, and prints `ULTRASONIC EMERGENCY STOP`.
+
 ## LED State Messages
 The Pi also sends LED state tokens to Arduino:
 - `LED_READY` in idle/passive mode (blue)
