@@ -21,7 +21,7 @@ from config import (
     WAKE_REQUIRED_HITS,
 )
 from motor_serial import MotorController
-from speech_listener_whisper import WhisperSpeechListener
+from speech_listener import ContinuousVoskListener
 
 LED_IDLE = "LED_READY"
 LED_COMMAND = "LED_LISTEN"
@@ -45,7 +45,7 @@ def execute_greeting_sequence(motor: MotorController) -> None:
 
 def run() -> None:
     """Run continuous passive listening with rolling command capture."""
-    listener = WhisperSpeechListener()
+    listener = ContinuousVoskListener()
     ok, message = listener.validate_environment()
     if not ok:
         print(message)
