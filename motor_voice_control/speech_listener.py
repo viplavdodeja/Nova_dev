@@ -9,7 +9,14 @@ from collections import deque
 from pathlib import Path
 
 from command_parser import contains_emergency_stop, contains_wake_phrase, normalize_text
-from config import COMMAND_LISTEN_TIMEOUT_SECONDS, MIC_DEVICE_INDEX, STT_BLOCK_SIZE, STT_SAMPLE_RATE, VOSK_MODEL_PATH
+from config import (
+    COMMAND_LISTEN_TIMEOUT_SECONDS,
+    MIC_DEVICE_INDEX,
+    STT_BLOCK_SIZE,
+    STT_DEBUG,
+    STT_SAMPLE_RATE,
+    VOSK_MODEL_PATH,
+)
 
 try:
     import sounddevice as sd
@@ -32,6 +39,7 @@ class ContinuousVoskListener:
         self._sample_rate = STT_SAMPLE_RATE
         self._block_size = STT_BLOCK_SIZE
         self._device_index = MIC_DEVICE_INDEX
+        self._debug = STT_DEBUG
 
         self._model: Model | None = None
         self._audio_queue: queue.Queue[bytes] = queue.Queue(maxsize=64)
@@ -69,6 +77,8 @@ class ContinuousVoskListener:
             )
             self._stream.start()
             self._started = True
+            if self._debug:
+                print(f"[STT DEBUG] Listening on mic device index: {self._device_index}")
             return True
         except Exception as exc:
             print(f"Audio stream start failure: {exc}")
@@ -102,6 +112,8 @@ class ContinuousVoskListener:
             if recognizer.AcceptWaveform(chunk):
                 text = self._extract_text(recognizer.Result())
                 if text:
+                    if self._debug:
+                        print(f"[STT DEBUG] final: {text}")
                     recent_segments.append(text)
                     combined = normalize_text(" ".join(recent_segments))
                     if contains_emergency_stop(combined) or contains_wake_phrase(combined):
@@ -109,6 +121,8 @@ class ContinuousVoskListener:
             else:
                 partial = self._extract_text(recognizer.PartialResult(), key="partial")
                 if partial:
+                    if self._debug:
+                        print(f"[STT DEBUG] partial: {partial}")
                     combined = normalize_text(" ".join([*recent_segments, partial]))
                     if contains_emergency_stop(combined) or contains_wake_phrase(combined):
                         return combined
@@ -133,12 +147,16 @@ class ContinuousVoskListener:
             if recognizer.AcceptWaveform(chunk):
                 text = self._extract_text(recognizer.Result())
                 if text:
+                    if self._debug:
+                        print(f"[STT DEBUG] command final: {text}")
                     best_final = text
                     speech_started = True
                     last_voice_time = time.monotonic()
             else:
                 partial = self._extract_text(recognizer.PartialResult(), key="partial")
                 if partial:
+                    if self._debug:
+                        print(f"[STT DEBUG] command partial: {partial}")
                     best_partial = partial
                     speech_started = True
                     last_voice_time = time.monotonic()

@@ -4,6 +4,16 @@ from __future__ import annotations
 
 import os
 
+
+def _env_int(name: str, default: int | None) -> int | None:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return default
+
 # Serial link to Arduino.
 # Override with NOVA_SERIAL_PORT if needed. Use "auto" to probe common Linux ports.
 SERIAL_PORT = os.getenv("NOVA_SERIAL_PORT", "auto")
@@ -28,9 +38,17 @@ WAKE_REQUIRED_HITS = 1
 
 # Continuous Vosk STT settings.
 VOSK_MODEL_PATH = "vosk-model-small-en-us-0.15"
-MIC_DEVICE_INDEX = None
+MIC_DEVICE_INDEX = _env_int("NOVA_MIC_DEVICE_INDEX", None)
 STT_SAMPLE_RATE = 16000
 STT_BLOCK_SIZE = 8000
+STT_DEBUG = os.getenv("NOVA_STT_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+
+# Whisper STT settings. Used by the motor voice control runtime for wake/command recognition.
+WHISPER_MODEL_NAME = os.getenv("NOVA_WHISPER_MODEL", "base.en")
+WHISPER_LANGUAGE = "en"
+WHISPER_TASK = "transcribe"
+WHISPER_RECORD_SECONDS = 4.0
+WHISPER_SILENCE_RMS_THRESHOLD = 0.01
 
 # Distance calibration tables.
 # Each tuple is: (distance_in_inches, duration_ms)
