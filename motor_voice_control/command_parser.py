@@ -17,7 +17,22 @@ from config import (
     WAKE_PHRASE,
 )
 
-WAKE_REGEX = re.compile(r"\bnova\b")
+WAKE_VARIANTS = (
+    "nova",
+    "nora",
+    "nevada",
+    "no va",
+    "know va",
+    "know that",
+    "no about",
+    "know about",
+    "hey know that",
+    "hey know about",
+    "hey know nora",
+)
+WAKE_REGEX = re.compile(
+    r"\b(?:nova|nora|nevada|no\s+va|know\s+va|know\s+that|no\s+about|know\s+about|hey\s+know\s+that|hey\s+know\s+about|hey\s+know\s+nora)\b"
+)
 DURATION_REGEX = re.compile(
     r"\bfor\s+(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
     r"(?P<unit>second|seconds|sec|secs|millisecond|milliseconds|ms)\b"
@@ -88,6 +103,8 @@ def contains_wake_phrase(text: str) -> bool:
     """Return True when wake phrase appears in transcript."""
     normalized = normalize_text(text)
     if WAKE_REGEX.search(normalized):
+        return True
+    if any(variant in normalized for variant in WAKE_VARIANTS):
         return True
     return WAKE_PHRASE in normalized
 
