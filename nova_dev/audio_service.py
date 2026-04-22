@@ -25,7 +25,7 @@ except ImportError:  # pragma: no cover - environment dependent
     SetLogLevel = None
 
 
-WAKE_REGEX = re.compile(r"\bhey[\s,!.?-]*nova\b")
+WAKE_REGEX = re.compile(r"\bnova\b")
 
 
 def normalize_text(text: str) -> str:

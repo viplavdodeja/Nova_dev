@@ -210,7 +210,7 @@ def run() -> None:
 
             if contains_wake_phrase(combined_passive_text):
                 wake_hits += 1
-                print(f"Wake phrase detected: hey nova ({wake_hits}/{WAKE_REQUIRED_HITS})")
+                print(f"Wake word detected: nova ({wake_hits}/{WAKE_REQUIRED_HITS})")
             else:
                 wake_hits = 0
 

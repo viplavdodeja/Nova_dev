@@ -73,7 +73,7 @@ Set `MIC_DEVICE_INDEX` in `config.py` if your microphone is not the default inpu
 Edit these in `config.py`:
 - `SERIAL_PORT` (default `/dev/ttyUSB0`)
 - `BAUD_RATE` (default `9600`)
-- `WAKE_PHRASE` (default `hey nova`)
+- `WAKE_PHRASE` (default `nova`)
 - `WAKE_REQUIRED_HITS` (set `2` to reduce false wake triggers)
 - `PASSIVE_LISTEN_TIMEOUT_SECONDS`
 - `COMMAND_LISTEN_TIMEOUT_SECONDS`
@@ -99,7 +99,7 @@ Typical output includes:
 - `Heard (passive): ...`
 - `Emergency stop detected`
 - `Sent to Arduino: X`
-- `Wake phrase detected: hey nova`
+- `Wake word detected: nova`
 - `Heard (command): ...`
 - `Command recognized: forward`
 - `Sent to Arduino: F`
@@ -107,8 +107,8 @@ Typical output includes:
 
 ## Behavior Summary
 - Passive mode always listens for `"stop"` and sends `X` immediately.
-- Passive mode listens for wake phrase `"hey nova"`.
-- Wake phrase matching handles punctuation variants such as `hey, nova`.
+- Passive mode listens for wake word `"nova"`.
+- Wake word matching uses the standalone word `nova`, so `hey nova` still works.
 - Passive listening records short clips and transcribes them with Whisper.
 - After wake phrase, a rolling command capture session begins on the live stream.
 - Idle LED is controlled by `LED_READY`.

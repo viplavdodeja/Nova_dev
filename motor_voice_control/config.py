@@ -21,7 +21,7 @@ BAUD_RATE = 9600
 SERIAL_TIMEOUT_SECONDS = 1.0
 
 # Wake phrase and rolling command timings.
-WAKE_PHRASE = "hey nova"
+WAKE_PHRASE = "nova"
 PASSIVE_LISTEN_TIMEOUT_SECONDS = 2.0
 COMMAND_LISTEN_TIMEOUT_SECONDS = 4.0
 GREETING_COMMANDS = (
@@ -50,7 +50,7 @@ WHISPER_TASK = "transcribe"
 WHISPER_WAKE_RECORD_SECONDS = 2.0
 WHISPER_SILENCE_RMS_THRESHOLD = 0.01
 WHISPER_INITIAL_PROMPT = (
-    "Robot voice commands: hey nova, stop, forward, backward, turn left, "
+    "Robot voice commands: nova, stop, forward, backward, turn left, "
     "turn right, spin, look left, look right, look forward, hello, "
     "good morning, good afternoon, good evening."
 )

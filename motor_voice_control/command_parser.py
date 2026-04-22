@@ -17,7 +17,7 @@ from config import (
     WAKE_PHRASE,
 )
 
-WAKE_REGEX = re.compile(r"\bhey[\s,!.?-]*nova\b")
+WAKE_REGEX = re.compile(r"\bnova\b")
 DURATION_REGEX = re.compile(
     r"\bfor\s+(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
     r"(?P<unit>second|seconds|sec|secs|millisecond|milliseconds|ms)\b"

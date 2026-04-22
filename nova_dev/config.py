@@ -22,7 +22,7 @@ class RuntimeConfig:
     baud_rate: int = 9600
     serial_timeout_seconds: float = 1.0
 
-    wake_phrase: str = "hey nova"
+    wake_phrase: str = "nova"
     passive_listen_timeout_seconds: float = 2.0
     command_listen_timeout_seconds: float = 4.0
     vosk_model_path: str = os.getenv("NOVA_VOSK_MODEL_PATH", "vosk-model-small-en-us-0.15")

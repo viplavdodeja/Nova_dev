@@ -10,7 +10,7 @@ The system is now at a stage where several core subsystems work independently, w
 
 ### 1. Speech-to-Text (STT)
 
-- Raspberry Pi listens for the wake phrase: `Hey Nova`
+- Raspberry Pi listens for the wake word: `Nova`
 - After wake detection, the Pi captures spoken command audio
 - Speech is transcribed and parsed into robot actions
 - Voice command flow is functioning for currently supported commands
@@ -78,4 +78,3 @@ Nova currently has:
 - working servo-based camera positioning
 
 The project is past subsystem bring-up and now entering integration, calibration, and behavior-layer development
-

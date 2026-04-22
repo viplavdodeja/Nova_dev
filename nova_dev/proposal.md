@@ -172,7 +172,7 @@ Practical interpretation:
 
 ### User voice command flow
 
-1. Audio service detects `Hey Nova`
+1. Audio service detects `Nova`
 2. Coordinator transitions to `command_mode`
 3. Coordinator pauses or throttles CV inference
 4. Audio service captures the user command
@@ -185,7 +185,7 @@ Practical interpretation:
 
 ### Conversational flow
 
-1. User says `Hey Nova`
+1. User says `Nova`
 2. Coordinator enters `command_mode`
 3. User asks a question instead of a robot action
 4. LLM generates a text response
