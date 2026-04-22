@@ -99,7 +99,6 @@ def run() -> None:
         return
     if not listener.start():
         return
-
     motor = MotorController(
         port=SERIAL_PORT,
         baud_rate=BAUD_RATE,
