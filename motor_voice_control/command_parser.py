@@ -23,16 +23,11 @@ WAKE_VARIANTS = (
     "nevada",
     "no va",
     "know va",
-    "know that",
-    "no about",
-    "know about",
-    "hey know that",
-    "hey know about",
-    "hey know nora",
 )
-WAKE_REGEX = re.compile(
-    r"\b(?:nova|nora|nevada|no\s+va|know\s+va|know\s+that|no\s+about|know\s+about|hey\s+know\s+that|hey\s+know\s+about|hey\s+know\s+nora)\b"
+FUZZY_WAKE_REGEX = re.compile(
+    r"\bhey\s+(?:nova|nora|nevada|no\s+va|know\s+va|know\s+that|know\s+about|know\s+nora)\b"
 )
+WAKE_REGEX = re.compile(r"\b(?:nova|nora|nevada|no\s+va|know\s+va)\b")
 DURATION_REGEX = re.compile(
     r"\bfor\s+(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
     r"(?P<unit>second|seconds|sec|secs|millisecond|milliseconds|ms)\b"
@@ -69,6 +64,11 @@ COMMAND_PATTERNS = [
     ("u-turn left", ("u turn left", "L", U_TURN_DEFAULT_MS)),
     ("u turn right", ("u turn right", "R", U_TURN_DEFAULT_MS)),
     ("u-turn right", ("u turn right", "R", U_TURN_DEFAULT_MS)),
+    ("take a u turn", ("u turn", "R", U_TURN_DEFAULT_MS)),
+    ("take u turn", ("u turn", "R", U_TURN_DEFAULT_MS)),
+    ("take your turn", ("u turn", "R", U_TURN_DEFAULT_MS)),
+    ("take you turn", ("u turn", "R", U_TURN_DEFAULT_MS)),
+    ("you turn", ("u turn", "R", U_TURN_DEFAULT_MS)),
     ("u turn", ("u turn", "R", U_TURN_DEFAULT_MS)),
     ("u-turn", ("u turn", "R", U_TURN_DEFAULT_MS)),
     ("spin left", ("spin left", "SL", SPIN_360_DEFAULT_MS)),
@@ -77,6 +77,10 @@ COMMAND_PATTERNS = [
     ("left turn", ("turn left", "L", TURN_LEFT_DEFAULT_MS)),
     ("turn right", ("turn right", "R", TURN_RIGHT_DEFAULT_MS)),
     ("right turn", ("turn right", "R", TURN_RIGHT_DEFAULT_MS)),
+    ("drive forward", ("drive forward", "F", FORWARD_DEFAULT_MS)),
+    ("drive forwards", ("drive forward", "F", FORWARD_DEFAULT_MS)),
+    ("dr forward", ("drive forward", "F", FORWARD_DEFAULT_MS)),
+    ("dr forwards", ("drive forward", "F", FORWARD_DEFAULT_MS)),
     ("move forward", ("move forward", "F", FORWARD_DEFAULT_MS)),
     ("go forward", ("go forward", "F", FORWARD_DEFAULT_MS)),
     ("forward", ("forward", "F", FORWARD_DEFAULT_MS)),
@@ -103,6 +107,8 @@ def contains_wake_phrase(text: str) -> bool:
     """Return True when wake phrase appears in transcript."""
     normalized = normalize_text(text)
     if WAKE_REGEX.search(normalized):
+        return True
+    if FUZZY_WAKE_REGEX.search(normalized):
         return True
     if any(variant in normalized for variant in WAKE_VARIANTS):
         return True
