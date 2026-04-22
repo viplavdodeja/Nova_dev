@@ -47,8 +47,13 @@ STT_DEBUG = os.getenv("NOVA_STT_DEBUG", "").strip().lower() in {"1", "true", "ye
 WHISPER_MODEL_NAME = os.getenv("NOVA_WHISPER_MODEL", "base.en")
 WHISPER_LANGUAGE = "en"
 WHISPER_TASK = "transcribe"
-WHISPER_RECORD_SECONDS = 4.0
+WHISPER_WAKE_RECORD_SECONDS = 2.0
 WHISPER_SILENCE_RMS_THRESHOLD = 0.01
+WHISPER_INITIAL_PROMPT = (
+    "Robot voice commands: hey nova, stop, forward, backward, turn left, "
+    "turn right, spin, look left, look right, look forward, hello, "
+    "good morning, good afternoon, good evening."
+)
 
 # Distance calibration tables.
 # Each tuple is: (distance_in_inches, duration_ms)

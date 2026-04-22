@@ -1,11 +1,11 @@
-# Motor Voice Control (Pi Side, continuous Vosk)
+# Motor Voice Control (Pi Side, Whisper STT)
 
 ## Overview
 This project runs on Raspberry Pi and sends motor and servo commands to an Arduino over serial, based on live microphone speech.
 
 Pipeline:
 1. Continuously stream microphone audio in memory
-2. Use Vosk for always-on passive wake and emergency-stop detection
+2. Use Whisper for passive wake and emergency-stop detection
 3. Switch to rolling command capture after wake
 4. Parse command text into motion or servo payloads
 5. Send serial payloads to Arduino
@@ -40,7 +40,8 @@ The Pi also sends LED state tokens to Arduino:
 
 ## Project Files
 - `main.py`: app loop (passive mode + command mode)
-- `speech_listener.py`: continuous Vosk microphone stream for wake and command capture
+- `speech_listener_whisper.py`: Whisper microphone clips for wake and command capture
+- `speech_listener.py`: older continuous Vosk microphone stream kept for reference
 - `command_parser.py`: wake phrase/emergency/command parsing
 - `motor_serial.py`: serial connection and command sending
 - `config.py`: all config values
@@ -57,7 +58,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Download a Vosk model into this directory or update `VOSK_MODEL_PATH` in `config.py` to point at the model location.
+Whisper will load the configured model on startup. The default is `base.en`.
 
 ## Verify Microphone Devices
 List capture devices:
@@ -78,10 +79,10 @@ Edit these in `config.py`:
 - `COMMAND_LISTEN_TIMEOUT_SECONDS`
 - `GREETING_COMMANDS`
 - `GREETING_LOOK_PAUSE_SECONDS`
-- `VOSK_MODEL_PATH`
+- `WHISPER_MODEL_NAME`
+- `WHISPER_RECORD_SECONDS`
 - `MIC_DEVICE_INDEX`
 - `STT_SAMPLE_RATE`
-- `STT_BLOCK_SIZE`
 - `FORWARD_DISTANCE_CALIBRATION_IN`
 - `BACKWARD_DISTANCE_CALIBRATION_IN`
 
@@ -108,7 +109,7 @@ Typical output includes:
 - Passive mode always listens for `"stop"` and sends `X` immediately.
 - Passive mode listens for wake phrase `"hey nova"`.
 - Wake phrase matching handles punctuation variants such as `hey, nova`.
-- Passive listening is continuous and does not rely on temporary WAV files.
+- Passive listening records short clips and transcribes them with Whisper.
 - After wake phrase, a rolling command capture session begins on the live stream.
 - Idle LED is controlled by `LED_READY`.
 - Command-mode LED is controlled by `LED_LISTEN`.

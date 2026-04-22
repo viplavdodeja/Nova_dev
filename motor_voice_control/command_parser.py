@@ -26,6 +26,7 @@ DISTANCE_REGEX = re.compile(
     r"\b(?:(?:for|move|go)\s+)?(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
     r"(?P<unit>centimeter|centimeters|centimetre|centimetres|cm|inch|inches|in|foot|feet|ft)\b"
 )
+BARE_DURATION_UNIT_REGEX = re.compile(r"\b(?:second|seconds|sec|secs|millisecond|milliseconds|ms)\b")
 
 NUMBER_WORDS = {
     "a": 1.0,
@@ -207,9 +208,12 @@ def parse_motor_command(text: str) -> tuple[str, str, int | None] | None:
         return None
 
     spoken_duration_ms = _parse_duration_ms(normalized)
+    has_unparsed_duration_unit = spoken_duration_ms is None and BARE_DURATION_UNIT_REGEX.search(normalized) is not None
 
     for phrase, (label, command, default_duration_ms) in COMMAND_PATTERNS:
         if phrase in normalized:
+            if has_unparsed_duration_unit and command in {"F", "B", "L", "R", "SL", "SR"}:
+                return None
             duration_ms = default_duration_ms
             spoken_distance_ms = _parse_distance_duration(normalized, command)
             if command in {"F", "B"} and spoken_distance_ms is not None:
