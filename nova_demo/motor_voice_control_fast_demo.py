@@ -7,6 +7,7 @@ import queue
 import sys
 import threading
 import time
+import importlib.util
 from pathlib import Path
 
 NOVA_TESTING_DIR = Path(__file__).resolve().parents[1]
@@ -15,7 +16,6 @@ MOTOR_DIR = NOVA_TESTING_DIR / "motor_voice_control"
 
 sys.path.insert(0, str(NOVA_DEMO_DIR))
 sys.path.insert(0, str(MOTOR_DIR))
-sys.path.insert(0, str(NOVA_TESTING_DIR))
 
 from command_parser import (  # noqa: E402
     contains_emergency_stop,
@@ -36,7 +36,34 @@ from config import (  # noqa: E402
 from motor_serial import MotorController  # noqa: E402
 from servo_tracking import ServoPersonTracker  # noqa: E402
 from speech_listener import ContinuousVoskListener  # noqa: E402
-from speech import speak_text, warm_tts  # noqa: E402
+
+
+def _load_root_speech_module():
+    """Load nova_testing/speech.py without shadowing motor_voice_control/config.py."""
+    module_path = NOVA_TESTING_DIR / "speech.py"
+    spec = importlib.util.spec_from_file_location("nova_testing_root_speech", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load speech module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    previous_config = sys.modules.pop("config", None)
+    sys.path.insert(0, str(NOVA_TESTING_DIR))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        try:
+            sys.path.remove(str(NOVA_TESTING_DIR))
+        except ValueError:
+            pass
+        if previous_config is not None:
+            sys.modules["config"] = previous_config
+        else:
+            sys.modules.pop("config", None)
+    return module
+
+
+_ROOT_SPEECH = _load_root_speech_module()
+speak_text = _ROOT_SPEECH.speak_text
+warm_tts = _ROOT_SPEECH.warm_tts
 
 LED_IDLE = "LED_READY"
 LED_COMMAND = "LED_LISTEN"
