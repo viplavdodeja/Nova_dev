@@ -29,6 +29,9 @@ except ImportError:  # pragma: no cover - environment dependent
     sd = None
 
 
+PLAYBACK_PREROLL_SECONDS = 0.35
+
+
 def _sanitize_text(text: str) -> str:
     """Return speech text cleaned for stable TTS behavior."""
     safe = re.sub(r"[\x00-\x1F\x7F]", " ", text)
@@ -47,6 +50,9 @@ def _play_pcm_int16(raw_bytes: bytes, sample_rate: int) -> bool:
         audio = np.frombuffer(raw_bytes, dtype=np.int16)
         if audio.size == 0:
             return False
+        preroll_frames = max(1, int(sample_rate * PLAYBACK_PREROLL_SECONDS))
+        preroll = np.zeros(preroll_frames, dtype=np.int16)
+        audio = np.concatenate((preroll, audio))
         sd.play(audio, samplerate=sample_rate, blocking=True)
         return True
     except Exception as exc:
@@ -76,6 +82,12 @@ def _play_wav_bytes(wav_bytes: bytes) -> bool:
         audio = np.frombuffer(frames, dtype=np.int16)
         if channels > 1:
             audio = audio.reshape(-1, channels)
+            preroll_frames = max(1, int(sample_rate * PLAYBACK_PREROLL_SECONDS))
+            preroll = np.zeros((preroll_frames, channels), dtype=np.int16)
+        else:
+            preroll_frames = max(1, int(sample_rate * PLAYBACK_PREROLL_SECONDS))
+            preroll = np.zeros(preroll_frames, dtype=np.int16)
+        audio = np.concatenate((preroll, audio))
         sd.play(audio, samplerate=sample_rate, blocking=True)
         return True
     except Exception as exc:
