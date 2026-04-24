@@ -19,6 +19,7 @@ from config import (
 
 WAKE_VARIANTS = (
     "hey nova",
+    "hey novo",
     "hey nora",
     "hey nevada",
     "hey no va",
@@ -33,14 +34,14 @@ WAKE_VARIANTS = (
 )
 FUZZY_WAKE_REGEX = re.compile(
     r"\bhey\s+(?:"
-    r"nova|nora|nevada|"
+    r"nova|novo|nora|nevada|"
     r"no\s+va|know\s+va|"
     r"know\s+that|know\s+about|know\s+nora|"
     r"no\s+there|know\s+there|nova\s+there|nora\s+there"
     r")\b"
 )
 WAKE_REGEX = re.compile(
-    r"\bhey\s+(?:nova|nora|nevada|no\s+va|know\s+va|no\s+there|know\s+there)\b"
+    r"\bhey\s+(?:nova|novo|nora|nevada|no\s+va|know\s+va|no\s+there|know\s+there)\b"
 )
 DURATION_REGEX = re.compile(
     r"\bfor\s+(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
@@ -113,6 +114,7 @@ COMMAND_PATTERNS = [
 def normalize_text(text: str) -> str:
     """Normalize transcript for robust keyword matching."""
     lowered = (text or "").strip().lower()
+    lowered = re.sub(r"[^\w\s.]+", " ", lowered)
     lowered = re.sub(r"\s+", " ", lowered)
     return lowered
 
