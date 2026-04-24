@@ -46,8 +46,8 @@ PRESET_GREETING_RESPONSES = {
 }
 
 
-def speak_async(text: str) -> None:
-    """Speak through the existing nova_testing speech.py path in an isolated process."""
+def speak_blocking(text: str) -> None:
+    """Speak through the existing nova_testing speech.py path and wait for completion."""
     if not text:
         return
 
@@ -56,14 +56,11 @@ def speak_async(text: str) -> None:
         "from speech import speak_text\n"
         "raise SystemExit(0 if speak_text(sys.argv[1]) else 1)\n"
     )
-    thread = threading.Thread(
-        target=subprocess.run,
-        args=([sys.executable, "-c", code, text],),
-        kwargs={"cwd": str(NOVA_TESTING_DIR), "check": False},
-        daemon=True,
-        name="preset-greeting-tts",
+    subprocess.run(
+        [sys.executable, "-c", code, text],
+        cwd=str(NOVA_TESTING_DIR),
+        check=False,
     )
-    thread.start()
 
 
 def preset_response_for(command_text: str) -> str | None:
@@ -163,43 +160,43 @@ def run() -> None:
                 wake_hits = 0
                 previous_passive_text = ""
                 send_led(LED_COMMAND)
-                print("Listening for command...")
-                command_text = normalize_text(listener.listen_for_command(COMMAND_LISTEN_TIMEOUT_SECONDS))
-                if command_text:
-                    print(f"Heard (command): {command_text}")
+                tracker.pause()
+                try:
+                    print("Listening for command...")
+                    command_text = normalize_text(listener.listen_for_command(COMMAND_LISTEN_TIMEOUT_SECONDS))
+                    if command_text:
+                        print(f"Heard (command): {command_text}")
 
-                greeting = parse_greeting_command(command_text)
-                if greeting is not None:
-                    print(f"Greeting recognized: {greeting}")
-                    response = preset_response_for(command_text)
-                    if response is not None:
-                        print(f"Nova preset response: {response}")
-                        speak_async(response)
-                    tracker.pause()
-                    try:
+                    greeting = parse_greeting_command(command_text)
+                    if greeting is not None:
+                        print(f"Greeting recognized: {greeting}")
+                        response = preset_response_for(command_text)
                         execute_greeting_sequence(send_payload)
-                    finally:
-                        tracker.resume()
-                    send_led(LED_IDLE)
+                        if response is not None:
+                            print(f"Nova preset response: {response}")
+                            speak_blocking(response)
+                        send_led(LED_IDLE)
+                        previous_passive_text = ""
+                        continue
+
+                    parsed = parse_motor_command(command_text)
+                    if parsed is None:
+                        print("No valid command recognized")
+                        send_led(LED_IDLE)
+                        previous_passive_text = ""
+                        continue
+
+                    phrase, serial_command, duration_ms = parsed
+                    print(f"Command recognized: {phrase}")
+                    payload = serial_command if duration_ms is None else f"{serial_command}{duration_ms}"
+                    print(f"Sending motion payload: {payload}")
+                    send_payload(payload)
+                    if duration_ms is None:
+                        send_led(LED_IDLE)
                     previous_passive_text = ""
                     continue
-
-                parsed = parse_motor_command(command_text)
-                if parsed is None:
-                    print("No valid command recognized")
-                    send_led(LED_IDLE)
-                    previous_passive_text = ""
-                    continue
-
-                phrase, serial_command, duration_ms = parsed
-                print(f"Command recognized: {phrase}")
-                payload = serial_command if duration_ms is None else f"{serial_command}{duration_ms}"
-                print(f"Sending motion payload: {payload}")
-                send_payload(payload)
-                if duration_ms is None:
-                    send_led(LED_IDLE)
-                previous_passive_text = ""
-                continue
+                finally:
+                    tracker.resume()
 
             previous_passive_text = current_passive_text if current_passive_text else ""
     except KeyboardInterrupt:
