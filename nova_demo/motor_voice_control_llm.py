@@ -35,7 +35,7 @@ from config import (  # noqa: E402
 )
 from motor_serial import MotorController  # noqa: E402
 from servo_tracking import ServoPersonTracker  # noqa: E402
-from speech_listener import WhisperSpeechListener  # noqa: E402
+from motor_voice_streaming import ContinuousVoskListener  # noqa: E402
 
 LED_IDLE = "LED_READY"
 LED_COMMAND = "LED_LISTEN"
@@ -87,7 +87,7 @@ def execute_greeting_sequence(send_payload) -> None:
 def run() -> None:
     """Run whisper.cpp passive listening with CV-aware LLM greeting speech."""
     os.chdir(MOTOR_DIR)
-    listener = WhisperSpeechListener()
+    listener = ContinuousVoskListener()
     ok, message = listener.validate_environment()
     if not ok:
         print(message)
