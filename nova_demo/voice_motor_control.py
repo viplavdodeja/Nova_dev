@@ -14,6 +14,11 @@ def main() -> None:
     script_path = script_dir / "main.py"
 
     os.environ.setdefault("NOVA_STT_DEBUG", "1")
+    os.environ.setdefault("NOVA_PASSIVE_LISTEN_TIMEOUT_SECONDS", "1.5")
+    os.environ.setdefault("NOVA_COMMAND_LISTEN_TIMEOUT_SECONDS", "3.0")
+    os.environ.setdefault("NOVA_WHISPER_WAKE_RECORD_SECONDS", "1.5")
+    os.environ.setdefault("NOVA_WHISPER_CPP_PASSIVE_MODE_SECONDS", "1.5")
+    os.environ.setdefault("NOVA_WHISPER_CPP_COMMAND_MODE_SECONDS", "3.0")
     os.chdir(script_dir)
     sys.path.insert(0, str(script_dir))
     runpy.run_path(str(script_path), run_name="__main__")
