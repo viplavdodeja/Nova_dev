@@ -4,11 +4,12 @@
 This project runs on Raspberry Pi and sends motor and servo commands to an Arduino over serial, based on live microphone speech.
 
 Pipeline:
-1. Continuously stream microphone audio in memory
-2. Use Whisper for passive wake and emergency-stop detection
-3. Switch to rolling command capture after wake
-4. Parse command text into motion or servo payloads
-5. Send serial payloads to Arduino
+1. Record short microphone clips with `arecord`
+2. Transcribe each clip with `whisper.cpp`
+3. Use passive clips for wake and emergency-stop detection
+4. Use command clips after wake for constrained command recognition
+5. Parse command text into motion or servo payloads
+6. Send serial payloads to Arduino
 
 No TTS, no UI, no LLM.
 
@@ -40,8 +41,8 @@ The Pi also sends LED state tokens to Arduino:
 
 ## Project Files
 - `main.py`: app loop (passive mode + command mode)
-- `speech_listener_whisper.py`: Whisper microphone clips for wake and command capture
-- `speech_listener.py`: older continuous Vosk microphone stream kept for reference
+- `speech_listener_whisper_cpp.py`: `arecord` + `whisper.cpp` clip transcription
+- `speech_listener.py`: compatibility wrapper exposing the listener API used by the scripts
 - `command_parser.py`: wake phrase/emergency/command parsing
 - `motor_serial.py`: serial connection and command sending
 - `config.py`: all config values
@@ -58,16 +59,16 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Whisper will load the configured model on startup. The default is `base.en`.
+`whisper.cpp` will load the configured model on startup.
 
 ## Verify Microphone Devices
-List capture devices:
+The temp-audio path uses `arecord`. To inspect capture devices:
 
 ```bash
-python3 -c "import sounddevice as sd; print(sd.query_devices())"
+arecord -l
 ```
 
-Set `MIC_DEVICE_INDEX` in `config.py` if your microphone is not the default input.
+Set `ARECORD_DEVICE` in `config.py` if your microphone is not the default input.
 
 ## Configure Before Running
 Edit these in `config.py`:
@@ -79,10 +80,12 @@ Edit these in `config.py`:
 - `COMMAND_LISTEN_TIMEOUT_SECONDS`
 - `GREETING_COMMANDS`
 - `GREETING_LOOK_PAUSE_SECONDS`
-- `WHISPER_MODEL_NAME`
-- `WHISPER_RECORD_SECONDS`
-- `MIC_DEVICE_INDEX`
-- `STT_SAMPLE_RATE`
+- `ARECORD_DEVICE`
+- `WHISPER_EXECUTABLE_PATH`
+- `WHISPER_MODEL_PATH`
+- `WHISPER_THREADS`
+- `WHISPER_CPP_PASSIVE_MODE_SECONDS`
+- `WHISPER_CPP_COMMAND_MODE_SECONDS`
 - `FORWARD_DISTANCE_CALIBRATION_IN`
 - `BACKWARD_DISTANCE_CALIBRATION_IN`
 
@@ -109,8 +112,8 @@ Typical output includes:
 - Passive mode always listens for `"stop"` and sends `X` immediately.
 - Passive mode listens for wake word `"nova"`.
 - Wake word matching uses the standalone word `nova`, so `hey nova` still works.
-- Passive listening records short clips and transcribes them with Whisper.
-- After wake phrase, a rolling command capture session begins on the live stream.
+- Passive listening records short clips and transcribes them with `whisper.cpp`.
+- After wake phrase, command mode records a command clip and transcribes it.
 - Idle LED is controlled by `LED_READY`.
 - Command-mode LED is controlled by `LED_LISTEN`.
 - Moving LED is controlled by the Arduino when a motion command starts and ends.

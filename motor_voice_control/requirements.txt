@@ -1,5 +1,1 @@
-openai-whisper
-numpy
 pyserial
-sounddevice
-vosk

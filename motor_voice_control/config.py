@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 
 def _env_int(name: str, default: int | None) -> int | None:
@@ -36,8 +37,7 @@ GREETING_LOOK_PAUSE_SECONDS = 1.0
 # Set to 2 for fewer false wakes in noisy spaces.
 WAKE_REQUIRED_HITS = 1
 
-# Continuous Vosk STT settings.
-VOSK_MODEL_PATH = "vosk-model-small-en-us-0.15"
+# Legacy Python-whisper settings kept for optional experiments.
 MIC_DEVICE_INDEX = _env_int("NOVA_MIC_DEVICE_INDEX", None)
 STT_SAMPLE_RATE = 16000
 STT_BLOCK_SIZE = 8000
@@ -54,6 +54,29 @@ WHISPER_INITIAL_PROMPT = (
     "turn right, spin, look left, look right, look forward, hello, "
     "good morning, good afternoon, good evening."
 )
+
+# whisper.cpp temporary-audio STT settings used by fast demo.
+ARECORD_DEVICE = os.getenv("NOVA_ARECORD_DEVICE", "default")
+ARECORD_SAMPLE_RATE = 16000
+ARECORD_CHANNELS = 1
+ARECORD_FORMAT = "S16_LE"
+WHISPER_EXECUTABLE_PATH = os.getenv(
+    "NOVA_WHISPER_CPP_EXECUTABLE",
+    "/home/novarobot/whisper.cpp/build/bin/whisper-cli",
+)
+WHISPER_MODEL_PATH = os.getenv(
+    "NOVA_WHISPER_CPP_MODEL",
+    "/home/novarobot/whisper.cpp/models/ggml-small.en.bin",
+)
+WHISPER_THREADS = _env_int("NOVA_WHISPER_CPP_THREADS", 4) or 4
+ENABLE_PASSIVE_VAD = os.getenv("NOVA_WHISPER_CPP_VAD", "").strip().lower() in {"1", "true", "yes", "on"}
+WHISPER_VAD_MODEL_PATH = os.getenv("NOVA_WHISPER_CPP_VAD_MODEL", "")
+WHISPER_VAD_THRESHOLD = 0.5
+ENABLE_COMMAND_GRAMMAR = True
+COMMAND_GRAMMAR_PATH = Path("command_grammar.gbnf")
+TEMP_AUDIO_DIR = Path("audio_files")
+WHISPER_CPP_PASSIVE_MODE_SECONDS = 2.0
+WHISPER_CPP_COMMAND_MODE_SECONDS = 4.0
 
 # Distance calibration tables.
 # Each tuple is: (distance_in_inches, duration_ms)

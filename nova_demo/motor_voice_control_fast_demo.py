@@ -1,4 +1,4 @@
-"""Low-latency motor voice demo with tracking, greeting animation, and preset TTS."""
+"""Motor voice demo with tracking, greeting animation, and whisper.cpp STT."""
 
 from __future__ import annotations
 
@@ -26,7 +26,6 @@ from command_parser import (  # noqa: E402
 )
 from config import (  # noqa: E402
     BAUD_RATE,
-    COMMAND_LISTEN_TIMEOUT_SECONDS,
     GREETING_LOOK_PAUSE_SECONDS,
     SERIAL_PORT,
     SERIAL_TIMEOUT_SECONDS,
@@ -35,7 +34,7 @@ from config import (  # noqa: E402
 )
 from motor_serial import MotorController  # noqa: E402
 from servo_tracking import ServoPersonTracker  # noqa: E402
-from speech_listener import ContinuousVoskListener  # noqa: E402
+from speech_listener_whisper_cpp import WhisperCppListener  # noqa: E402
 
 
 def _load_root_speech_module():
@@ -140,12 +139,10 @@ def execute_greeting_sequence(send_payload) -> None:
 def run() -> None:
     """Run the fast demo loop."""
     os.chdir(MOTOR_DIR)
-    listener = ContinuousVoskListener()
+    listener = WhisperCppListener()
     ok, message = listener.validate_environment()
     if not ok:
         print(message)
-        return
-    if not listener.start():
         return
 
     motor = MotorController(
@@ -154,7 +151,6 @@ def run() -> None:
         timeout_seconds=SERIAL_TIMEOUT_SECONDS,
     )
     if not motor.connect():
-        listener.stop()
         return
 
     serial_lock = threading.Lock()
@@ -184,7 +180,7 @@ def run() -> None:
     tracker.start()
 
     print("Fast Nova motor voice demo started")
-    print("Uses continuous Vosk for low-latency wake/commands and persistent TTS.")
+    print("Uses arecord + whisper.cpp temp clips for wake/commands and persistent TTS.")
     print("Passive listening mode active")
     print("Press Ctrl+C to stop\n")
 
@@ -193,7 +189,9 @@ def run() -> None:
 
     try:
         while True:
-            current_passive_text = normalize_text(listener.listen_for_passive_trigger())
+            current_passive_text = normalize_text(
+                listener.listen_once(listener.passive_duration_seconds(), command_mode=False)
+            )
             if current_passive_text:
                 print(f"Heard (passive): {current_passive_text}")
 
@@ -222,7 +220,9 @@ def run() -> None:
                 tracker.pause()
                 try:
                     print("Listening for command...")
-                    command_text = normalize_text(listener.listen_for_command(COMMAND_LISTEN_TIMEOUT_SECONDS))
+                    command_text = normalize_text(
+                        listener.listen_once(listener.command_duration_seconds(), command_mode=True)
+                    )
                 finally:
                     tracker.resume()
 
@@ -267,7 +267,6 @@ def run() -> None:
         tts_worker.stop()
         send_led(LED_IDLE)
         motor.close()
-        listener.stop()
 
 
 if __name__ == "__main__":
