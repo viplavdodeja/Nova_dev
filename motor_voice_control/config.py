@@ -23,7 +23,7 @@ SERIAL_TIMEOUT_SECONDS = 1.0
 
 # Wake phrase and rolling command timings.
 WAKE_PHRASE = "hey nova"
-PASSIVE_LISTEN_TIMEOUT_SECONDS = 2.0
+PASSIVE_LISTEN_TIMEOUT_SECONDS = 3.0
 COMMAND_LISTEN_TIMEOUT_SECONDS = 4.0
 GREETING_COMMANDS = (
     "hello",
@@ -47,7 +47,7 @@ STT_DEBUG = os.getenv("NOVA_STT_DEBUG", "").strip().lower() in {"1", "true", "ye
 WHISPER_MODEL_NAME = os.getenv("NOVA_WHISPER_MODEL", "base.en")
 WHISPER_LANGUAGE = "en"
 WHISPER_TASK = "transcribe"
-WHISPER_WAKE_RECORD_SECONDS = 2.0
+WHISPER_WAKE_RECORD_SECONDS = 3.0
 WHISPER_SILENCE_RMS_THRESHOLD = 0.01
 WHISPER_INITIAL_PROMPT = (
     "Robot voice commands: nova, stop, forward, backward, turn left, "
@@ -75,7 +75,7 @@ WHISPER_VAD_THRESHOLD = 0.5
 ENABLE_COMMAND_GRAMMAR = True
 COMMAND_GRAMMAR_PATH = Path("command_grammar.gbnf")
 TEMP_AUDIO_DIR = Path("audio_files")
-WHISPER_CPP_PASSIVE_MODE_SECONDS = 2.0
+WHISPER_CPP_PASSIVE_MODE_SECONDS = 3.0
 WHISPER_CPP_COMMAND_MODE_SECONDS = 4.0
 
 # Distance calibration tables.
