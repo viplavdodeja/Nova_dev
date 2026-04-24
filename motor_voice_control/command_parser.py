@@ -18,16 +18,30 @@ from config import (
 )
 
 WAKE_VARIANTS = (
-    "nova",
-    "nora",
-    "nevada",
-    "no va",
-    "know va",
+    "hey nova",
+    "hey nora",
+    "hey nevada",
+    "hey no va",
+    "hey know va",
+    "hey no there",
+    "hey know there",
+    "hey nova there",
+    "hey nora there",
+    "hey know that",
+    "hey know about",
+    "hey no there",
 )
 FUZZY_WAKE_REGEX = re.compile(
-    r"\bhey\s+(?:nova|nora|nevada|no\s+va|know\s+va|know\s+that|know\s+about|know\s+nora)\b"
+    r"\bhey\s+(?:"
+    r"nova|nora|nevada|"
+    r"no\s+va|know\s+va|"
+    r"know\s+that|know\s+about|know\s+nora|"
+    r"no\s+there|know\s+there|nova\s+there|nora\s+there"
+    r")\b"
 )
-WAKE_REGEX = re.compile(r"\b(?:nova|nora|nevada|no\s+va|know\s+va)\b")
+WAKE_REGEX = re.compile(
+    r"\bhey\s+(?:nova|nora|nevada|no\s+va|know\s+va|no\s+there|know\s+there)\b"
+)
 DURATION_REGEX = re.compile(
     r"\bfor\s+(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
     r"(?P<unit>second|seconds|sec|secs|millisecond|milliseconds|ms)\b"
@@ -106,13 +120,15 @@ def normalize_text(text: str) -> str:
 def contains_wake_phrase(text: str) -> bool:
     """Return True when wake phrase appears in transcript."""
     normalized = normalize_text(text)
+    if WAKE_PHRASE in normalized:
+        return True
     if WAKE_REGEX.search(normalized):
         return True
     if FUZZY_WAKE_REGEX.search(normalized):
         return True
     if any(variant in normalized for variant in WAKE_VARIANTS):
         return True
-    return WAKE_PHRASE in normalized
+    return False
 
 
 def contains_emergency_stop(text: str) -> bool:

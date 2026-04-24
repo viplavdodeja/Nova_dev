@@ -18,6 +18,7 @@ from config import (
     SERIAL_PORT,
     SERIAL_TIMEOUT_SECONDS,
     SPIN_360_DEFAULT_MS,
+    WAKE_PHRASE,
     WAKE_REQUIRED_HITS,
 )
 from motor_serial import MotorController
@@ -89,7 +90,7 @@ def run() -> None:
 
             if contains_wake_phrase(combined_passive_text):
                 wake_hits += 1
-                print(f"Wake word detected: nova ({wake_hits}/{WAKE_REQUIRED_HITS})")
+                print(f"Wake word detected: {WAKE_PHRASE} ({wake_hits}/{WAKE_REQUIRED_HITS})")
             else:
                 wake_hits = 0
 
