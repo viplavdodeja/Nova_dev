@@ -174,6 +174,7 @@ def run() -> None:
                         execute_greeting_sequence(send_payload)
                         if response is not None:
                             print(f"Nova preset response: {response}")
+                            time.sleep(1.5)
                             speak_blocking(response)
                         send_led(LED_IDLE)
                         previous_passive_text = ""
