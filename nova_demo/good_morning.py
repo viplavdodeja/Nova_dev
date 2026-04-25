@@ -27,6 +27,7 @@ from motor_serial import MotorController  # noqa: E402
 INTRO_TEXT = "Good morning, I am Nova. Nice to meet you."
 LED_IDLE = "LED_READY"
 SPEECH_PREROLL_SECONDS = 1.5
+ARDUINO_BOOT_DELAY_SECONDS = 2.5
 
 
 def _load_root_speech_module():
@@ -108,6 +109,9 @@ def main() -> None:
         return
 
     try:
+        # Opening the serial port resets many Arduino boards. Give the sketch time
+        # to finish booting before sending servo/motor commands.
+        time.sleep(ARDUINO_BOOT_DELAY_SECONDS)
         warm_tts()
         motor.set_led_state(LED_IDLE)
         execute_greeting_sequence(motor)
