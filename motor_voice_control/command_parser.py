@@ -24,11 +24,18 @@ WAKE_VARIANTS = (
     "hey nevada",
     "hey no va",
     "hey know va",
+    "hey know the",
     "hey no there",
     "hey know there",
     "hey nova there",
     "hey nora there",
     "hey know that",
+    "hey no that",
+    "here no that",
+    "hey no",
+    "a nova",
+    "hey over",
+    "hanover",
     "hey know about",
     "hey no there",
 )
@@ -36,12 +43,19 @@ FUZZY_WAKE_REGEX = re.compile(
     r"\bhey\s+(?:"
     r"nova|novo|nora|nevada|"
     r"no\s+va|know\s+va|"
-    r"know\s+that|know\s+about|know\s+nora|"
+    r"know\s+the|know\s+that|know\s+about|know\s+nora|"
+    r"no|no\s+that|"
     r"no\s+there|know\s+there|nova\s+there|nora\s+there"
     r")\b"
 )
 WAKE_REGEX = re.compile(
-    r"\bhey\s+(?:nova|novo|nora|nevada|no\s+va|know\s+va|no\s+there|know\s+there)\b"
+    r"\b(?:"
+    r"hey\s+(?:nova|novo|nora|nevada|no|no\s+va|know\s+va|know\s+the|know\s+that|no\s+that|no\s+there|know\s+there)|"
+    r"here\s+no\s+that|"
+    r"a\s+nova|"
+    r"hey\s+over|"
+    r"hanover"
+    r")\b"
 )
 DURATION_REGEX = re.compile(
     r"\bfor\s+(?P<value>(?:\d+(?:\.\d+)?)|(?:an?|half|one|two|three|four|five|six|seven|eight|nine|ten))\s+"
