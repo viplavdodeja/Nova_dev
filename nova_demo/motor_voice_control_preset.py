@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
-import subprocess
 import sys
 import threading
 import time
@@ -39,6 +39,7 @@ from motor_voice_streaming import ContinuousVoskListener  # noqa: E402
 
 LED_IDLE = "LED_READY"
 LED_COMMAND = "LED_LISTEN"
+SPEECH_PREROLL_SECONDS = 1.5
 
 PRESET_GREETING_RESPONSES = {
     "good morning": "Good morning",
@@ -46,21 +47,56 @@ PRESET_GREETING_RESPONSES = {
 }
 
 
+def _load_root_speech_module():
+    """Load nova_testing/speech.py without shadowing motor config imports."""
+    module_path = NOVA_TESTING_DIR / "speech.py"
+    spec = importlib.util.spec_from_file_location("nova_testing_root_speech_preset", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load speech module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    previous_config = sys.modules.pop("config", None)
+    sys.path.insert(0, str(NOVA_TESTING_DIR))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        try:
+            sys.path.remove(str(NOVA_TESTING_DIR))
+        except ValueError:
+            pass
+        if previous_config is not None:
+            sys.modules["config"] = previous_config
+        else:
+            sys.modules.pop("config", None)
+    return module
+
+
+_ROOT_SPEECH = _load_root_speech_module()
+speak_text = _ROOT_SPEECH.speak_text
+warm_tts = _ROOT_SPEECH.warm_tts
+_speech_sd = getattr(_ROOT_SPEECH, "sd", None)
+_speech_np = getattr(_ROOT_SPEECH, "np", None)
+_speech_sample_rate = getattr(_ROOT_SPEECH, "PIPER_SAMPLE_RATE", 22050)
+
+
+def _play_silence(seconds: float) -> None:
+    """Play silent audio to wake the speaker path before speech starts."""
+    if seconds <= 0 or _speech_sd is None or _speech_np is None:
+        return
+    frames = max(1, int(_speech_sample_rate * seconds))
+    silence = _speech_np.zeros(frames, dtype=_speech_np.int16)
+    try:
+        _speech_sd.play(silence, samplerate=_speech_sample_rate, blocking=True)
+    except Exception as exc:
+        print(f"[TTS] Silence preroll failed: {exc}")
+
+
 def speak_blocking(text: str) -> None:
     """Speak through the existing nova_testing speech.py path and wait for completion."""
     if not text:
         return
-
-    code = (
-        "import sys\n"
-        "from speech import speak_text\n"
-        "raise SystemExit(0 if speak_text(sys.argv[1]) else 1)\n"
-    )
-    subprocess.run(
-        [sys.executable, "-c", code, text],
-        cwd=str(NOVA_TESTING_DIR),
-        check=False,
-    )
+    _play_silence(SPEECH_PREROLL_SECONDS)
+    if not speak_text(text):
+        print("[TTS] Speech output failed.")
 
 
 def preset_response_for(command_text: str) -> str | None:
@@ -124,6 +160,7 @@ def run() -> None:
         send_payload=send_payload,
         model_path=str(yolo_model_path) if yolo_model_path.exists() else "yolo11n.pt",
     )
+    warm_tts()
     send_led(LED_IDLE)
     tracker.start()
 
@@ -174,7 +211,6 @@ def run() -> None:
                         execute_greeting_sequence(send_payload)
                         if response is not None:
                             print(f"Nova preset response: {response}")
-                            time.sleep(1.5)
                             speak_blocking(response)
                         send_led(LED_IDLE)
                         previous_passive_text = ""
