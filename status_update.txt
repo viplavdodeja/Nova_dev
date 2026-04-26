@@ -1,0 +1,149 @@
+Nova Robot Status Update
+Date: 2026-04-25
+
+Current demo-ready functionality
+
+1. Voice-controlled motor commands
+- Wake phrase support is implemented in the motor voice control flows.
+- The robot can listen for a wake phrase, then accept a short spoken command.
+- Supported command categories include:
+  - forward / backward
+  - left / right / spin
+  - stop / emergency stop
+  - look left / look right / look center
+  - greeting commands such as hello and good morning
+
+2. Greeting demo sequence
+- Preset greeting behavior exists in the nova_demo scripts.
+- The greeting sequence can:
+  - look left
+  - look right
+  - center the camera
+  - spin 360 degrees
+  - speak a greeting through the speaker
+- There is also a one-shot script for this:
+  - nova_testing/nova_demo/good_morning.py
+
+3. Live person tracking with YOLO
+- YOLO-based person detection is running in the demo tracking flows.
+- The servo can pan to keep a detected person in frame.
+- A live camera preview window is available in motor_follow.py.
+- Tracking logic uses the current YOLO person detection confidence and follows only detections at or above 0.90 confidence.
+
+4. Follow mode
+- Experimental follow mode exists in:
+  - nova_testing/nova_demo/motor_follow.py
+- Current follow behavior:
+  - only starts if a person is already in frame
+  - uses the camera servo to track a person
+  - uses ultrasonic distance to stop near the person
+  - if the target is lost, the servo scans left/right to reacquire
+  - before each forward burst, the robot can do a small base spin correction until the servo is near center
+- This mode is still being tuned.
+
+5. Ultrasonic distance sensing
+- Ultrasonic distance is now available through the Arduino firmware via serial command:
+  - DIST
+- Expected Arduino response format:
+  - DIST <inches>
+  - DIST ERR
+- Follow mode now uses ultrasonic distance instead of YOLO bounding-box size to decide when to stop.
+
+6. Manual terminal fallback
+- A manual serial control console exists in:
+  - nova_testing/nova_demo/terminal_input.py
+- This is useful for demos and hardware testing.
+- It can send commands such as:
+  - F1000
+  - R300
+  - LOOK_LEFT
+  - SV90
+  - DIST
+  - X
+
+7. Audio / speech output
+- Speech output is working locally on the Pi.
+- Current speech path includes preroll silence to reduce Bluetooth clipping at the start of phrases.
+- Preset demo scripts use local speech output instead of remote TTS.
+
+
+Important code locations
+
+Pi / Python side
+
+- nova_testing/nova_demo/motor_voice_control_preset.py
+  Main preset voice + servo tracking + greeting demo flow.
+
+- nova_testing/nova_demo/motor_follow.py
+  Experimental follow-me flow with YOLO tracking, live preview, servo scan, and ultrasonic stop.
+
+- nova_testing/nova_demo/good_morning.py
+  One-shot intro script for greeting animation + speech.
+
+- nova_testing/nova_demo/terminal_input.py
+  Manual terminal command sender to the Arduino.
+
+- nova_testing/nova_demo/motor_voice_streaming.py
+  Streaming Vosk-based voice control demo path.
+
+- nova_testing/motor_voice_control/command_parser.py
+  Wake phrase and spoken command parsing logic.
+
+- nova_testing/motor_voice_control/config.py
+  Shared serial, wake phrase, timing, and command configuration.
+
+- nova_testing/motor_voice_control/motor_serial.py
+  Serial communication wrapper for Arduino commands and request/response reads.
+
+- nova_testing/speech.py
+  Local speech output logic, including audio preroll for cleaner playback.
+
+
+Arduino / firmware side
+
+- Robot_control/src/main.cpp
+  Current active Arduino firmware used by the robot.
+
+Current firmware responsibilities
+- motor drive commands
+- timed movement commands
+- servo control
+- LED status control
+- ultrasonic DIST response
+
+Current hardware pin mapping in main.cpp
+- Servo: pin 10
+- Ultrasonic TRIG: pin 13
+- Ultrasonic ECHO: pin 12
+
+
+Known limitations / tuning areas
+
+1. Follow mode is still being tuned
+- Base alignment, forward burst timing, and reacquire timing may still need adjustment.
+
+2. Voice activation remains sensitive to mic quality, accent, and background noise
+- Wake phrase matching has been broadened to improve recognition, but that may increase false positives.
+
+3. Bluetooth audio can still be sensitive to output sink behavior
+- Speech clipping has been reduced, but audio routing should still be verified before demos.
+
+4. Servo tracking and follow logic are coupled to camera FPS and YOLO latency
+- If camera or inference slows down, reacquire timing may need further adjustment.
+
+
+Recommended demo paths right now
+
+1. Preset greeting demo
+- Use:
+  - nova_testing/nova_demo/motor_voice_control_preset.py
+  - or nova_testing/nova_demo/good_morning.py
+
+2. Manual fallback
+- Use:
+  - nova_testing/nova_demo/terminal_input.py
+
+3. Follow mode testing
+- Use:
+  - nova_testing/nova_demo/motor_follow.py
+- This is functional but should be treated as an actively tuned behavior, not final.
