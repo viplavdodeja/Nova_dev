@@ -407,7 +407,7 @@ def annotate_follow_frame(frame, detection: Detection | None, status_text: str) 
 
 def run_follow_mode(send_payload, get_current_servo_angle, tracker: TrackedPersonMonitor) -> None:
     """Follow the person already in frame instead of rotating to search for one."""
-    last_detection_time = 0.0
+    last_detection_time = 1.0
     print("[Follow] Entered follow mode")
     initial_detection, initial_width, initial_height = tracker.get_snapshot()
     if initial_detection is None or initial_width <= 0 or initial_height <= 0:
