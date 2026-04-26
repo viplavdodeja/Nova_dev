@@ -58,7 +58,7 @@ FOLLOW_CENTER_DEADZONE_RATIO = 0.12
 FOLLOW_STOP_WIDTH_RATIO = 0.38
 FOLLOW_STOP_HEIGHT_RATIO = 0.55
 FOLLOW_LOST_TARGET_TIMEOUT_SECONDS = 1.5
-FOLLOW_CONFIDENCE_THRESHOLD = 0.45
+FOLLOW_CONFIDENCE_THRESHOLD = 0.90
 FOLLOW_CAMERA_INDEX = 0
 FOLLOW_TARGET_LABEL = "person"
 FOLLOW_COMMAND_PHRASES = ("follow me",)
@@ -67,6 +67,7 @@ FOLLOW_SERVO_LEFT_ANGLE = 150
 FOLLOW_SERVO_RIGHT_ANGLE = 30
 FOLLOW_SERVO_ALIGN_DEADZONE_DEGREES = 8
 FOLLOW_INITIAL_ALIGN_STEP_DEGREES = 15
+FOLLOW_SHOW_WINDOW = True
 
 PRESET_GREETING_RESPONSES = {
     "good morning": "Good morning",
@@ -200,6 +201,47 @@ def find_best_person_detection(result) -> Detection | None:
     return best
 
 
+def annotate_follow_frame(frame, detection: Detection | None, status_text: str) -> None:
+    """Annotate the live follow window with the current target and status."""
+    if cv2 is None:
+        return
+
+    frame_height, frame_width = frame.shape[:2]
+    midpoint = frame_width // 2
+    deadzone_half_width = int((frame_width * FOLLOW_CENTER_DEADZONE_RATIO) / 2.0)
+
+    cv2.line(frame, (midpoint, 0), (midpoint, frame_height), (255, 255, 0), 1)
+    cv2.line(
+        frame,
+        (midpoint - deadzone_half_width, 0),
+        (midpoint - deadzone_half_width, frame_height),
+        (0, 255, 255),
+        1,
+    )
+    cv2.line(
+        frame,
+        (midpoint + deadzone_half_width, 0),
+        (midpoint + deadzone_half_width, frame_height),
+        (0, 255, 255),
+        1,
+    )
+    cv2.putText(frame, status_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (50, 220, 50), 2)
+
+    if detection is None:
+        cv2.putText(frame, "No person >= 0.90 confidence", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (30, 30, 255), 2)
+        return
+
+    half_width = detection.width / 2.0
+    half_height = detection.height / 2.0
+    x1 = int(detection.center_x - half_width)
+    y1 = int(detection.center_y - half_height)
+    x2 = int(detection.center_x + half_width)
+    y2 = int(detection.center_y + half_height)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 200, 0), 2)
+    label_text = f"{detection.label} {detection.confidence:.2f}"
+    cv2.putText(frame, label_text, (x1, max(y1 - 8, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
+
+
 def run_follow_mode(send_payload, get_current_servo_angle) -> None:
     """Align to the already locked person, then drive forward until close enough."""
     if cv2 is None or YOLO is None:
@@ -249,6 +291,14 @@ def run_follow_mode(send_payload, get_current_servo_angle) -> None:
             now = time.monotonic()
 
             if detection is None:
+                if FOLLOW_SHOW_WINDOW and cv2 is not None:
+                    preview = frame.copy()
+                    annotate_follow_frame(preview, None, "Follow: target lost")
+                    cv2.imshow("Nova Follow", preview)
+                    if (cv2.waitKey(1) & 0xFF) == ord("q"):
+                        print("[Follow] Window closed by user.")
+                        send_payload("X")
+                        break
                 if last_detection_time and (now - last_detection_time) >= FOLLOW_LOST_TARGET_TIMEOUT_SECONDS:
                     print("[Follow] Lost person target. Stopping follow mode.")
                     send_payload("X")
@@ -273,6 +323,19 @@ def run_follow_mode(send_payload, get_current_servo_angle) -> None:
                 f" height_ratio={height_ratio:.2f}"
             )
 
+            status_text = (
+                f"Follow conf={detection.confidence:.2f} "
+                f"off={offset:.0f} w={width_ratio:.2f} h={height_ratio:.2f}"
+            )
+            if FOLLOW_SHOW_WINDOW and cv2 is not None:
+                preview = frame.copy()
+                annotate_follow_frame(preview, detection, status_text)
+                cv2.imshow("Nova Follow", preview)
+                if (cv2.waitKey(1) & 0xFF) == ord("q"):
+                    print("[Follow] Window closed by user.")
+                    send_payload("X")
+                    break
+
             if abs(offset) > deadzone_half_width:
                 turn_payload = f"L{FOLLOW_TURN_BURST_MS}" if offset < 0 else f"R{FOLLOW_TURN_BURST_MS}"
                 print(f"[Follow] Aligning base with {turn_payload}")
@@ -295,6 +358,8 @@ def run_follow_mode(send_payload, get_current_servo_angle) -> None:
             time.sleep((FOLLOW_FORWARD_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
     finally:
         capture.release()
+        if FOLLOW_SHOW_WINDOW and cv2 is not None:
+            cv2.destroyWindow("Nova Follow")
         send_payload("LOOK_CENTER")
 
 
