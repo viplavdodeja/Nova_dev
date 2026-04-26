@@ -11,6 +11,7 @@ REPO_ROOT = NOVA_TESTING_DIR.parent
 
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(NOVA_TESTING_DIR))
+sys.path.insert(0, str(NOVA_TESTING_DIR / "motor_voice_control"))
 
 from nova_testing.config import CAMERA_INDEX, CV_CONFIDENCE_THRESHOLD, YOLO_MODEL_PATH  # noqa: E402
 from nova_testing.nova_server.client.nova_server_client import (  # noqa: E402
@@ -18,6 +19,8 @@ from nova_testing.nova_server.client.nova_server_client import (  # noqa: E402
     check_server_health,
 )
 from nova_testing.speech import speak_text  # noqa: E402
+from motor_serial import MotorController  # noqa: E402
+from config import BAUD_RATE, SERIAL_PORT, SERIAL_TIMEOUT_SECONDS  # noqa: E402
 
 try:
     import cv2  # noqa: E402
@@ -33,8 +36,8 @@ except ImportError:  # pragma: no cover - environment dependent
 DEFAULT_SERVER_URL = os.getenv("NOVA_SERVER_URL", "http://127.0.0.1:8080")
 DEFAULT_EVENT = os.getenv("NOVA_REASON_EVENT", "good_morning")
 DEFAULT_TRANSCRIPT = os.getenv("NOVA_REASON_TRANSCRIPT", "good morning nova")
-DEFAULT_DISTANCE_INCHES = float(os.getenv("NOVA_REASON_DISTANCE_INCHES", "28"))
 DEFAULT_ROBOT_STATE = os.getenv("NOVA_REASON_ROBOT_STATE", "idle")
+DISTANCE_QUERY_TIMEOUT_SECONDS = 1.0
 
 
 def _position_from_center_x(center_x: float, frame_width: int) -> str:
@@ -109,14 +112,56 @@ def capture_live_detections() -> list[dict]:
     return detections
 
 
+def read_live_distance_inches() -> float | None:
+    """Read one live ultrasonic distance value from the Arduino."""
+    motor = MotorController(
+        port=SERIAL_PORT,
+        baud_rate=BAUD_RATE,
+        timeout_seconds=SERIAL_TIMEOUT_SECONDS,
+    )
+    if not motor.connect():
+        print("Could not connect to Arduino for ultrasonic distance.")
+        return None
+
+    try:
+        response = motor.request_message(
+            "DIST",
+            expected_prefix="DIST",
+            max_wait_seconds=DISTANCE_QUERY_TIMEOUT_SECONDS,
+        )
+    finally:
+        motor.close()
+
+    if not response:
+        print("No ultrasonic distance response received.")
+        return None
+
+    parts = response.split(maxsplit=1)
+    if len(parts) != 2:
+        print(f"Unexpected ultrasonic response: {response}")
+        return None
+
+    value = parts[1].strip()
+    if value.upper() == "ERR":
+        print("Ultrasonic sensor returned DIST ERR.")
+        return None
+
+    try:
+        return float(value)
+    except ValueError:
+        print(f"Invalid ultrasonic distance value: {response}")
+        return None
+
+
 def build_live_payload() -> dict:
     """Build a reasoning payload using live local detections from the Pi."""
     detections = capture_live_detections()
+    distance_inches = read_live_distance_inches()
     return {
         "event": DEFAULT_EVENT,
         "transcript": DEFAULT_TRANSCRIPT,
         "detections": detections,
-        "distance_inches": DEFAULT_DISTANCE_INCHES,
+        "distance_inches": distance_inches,
         "robot_state": DEFAULT_ROBOT_STATE,
     }
 

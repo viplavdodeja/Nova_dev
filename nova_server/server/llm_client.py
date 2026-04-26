@@ -13,6 +13,15 @@ from .schemas import ReasonRequest, ReasonResponse
 
 DEFAULT_SAFETY_NOTE = "movement handled locally by Pi"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+DEFAULT_NOVA_SYSTEM_PROMPT = (
+    "You are NOVA, a witty but professional AI robot being used in a live tech demo. "
+    "Sound friendly, confident, and slightly playful without becoming cheesy. "
+    "Keep replies short enough to speak aloud comfortably. "
+    "When useful, mention what you detect in the scene or how close someone is. "
+    "Never output raw robot motor commands. "
+    "Never suggest unsafe movement. "
+    "The Raspberry Pi handles all movement, safety, and Arduino control locally."
+)
 
 
 def _build_scene_summary(request: ReasonRequest) -> str:
@@ -70,12 +79,15 @@ def _fallback_response(request: ReasonRequest) -> ReasonResponse:
 
 def _build_prompt(request: ReasonRequest) -> str:
     """Build a short prompt for a local LLM endpoint."""
+    system_prompt = os.getenv("NOVA_SYSTEM_PROMPT", DEFAULT_NOVA_SYSTEM_PROMPT).strip()
     request_json = json.dumps(request.model_dump(), indent=2)
     return (
-        "You are the reasoning layer for Project NOVA.\n"
-        "Return only a short, natural spoken reply.\n"
-        "Never output raw robot motor commands.\n"
-        "Never suggest unsafe movement.\n"
+        f"{system_prompt}\n\n"
+        "Return only a short spoken reply for the demo.\n"
+        "Keep it natural and expressive, but concise.\n"
+        "Do not output JSON.\n"
+        "Do not output raw robot motor commands.\n"
+        "Do not suggest unsafe movement.\n"
         "Movement and safety remain local to the Raspberry Pi.\n\n"
         f"Context:\n{request_json}\n\n"
         "Write one concise spoken reply."
