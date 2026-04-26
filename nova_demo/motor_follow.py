@@ -343,6 +343,9 @@ def run() -> None:
         with serial_lock:
             return motor.send_command(command)
 
+    def get_current_servo_angle() -> int:
+        return current_servo_angle["value"]
+
     yolo_model_path = NOVA_TESTING_DIR.parent / "yolo11n.pt"
     tracker = ServoPersonTracker(
         send_payload=send_payload,
@@ -451,5 +454,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-    def get_current_servo_angle() -> int:
-        return current_servo_angle["value"]
