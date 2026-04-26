@@ -57,7 +57,7 @@ FOLLOW_CENTER_DEADZONE_RATIO = 0.12
 FOLLOW_STOP_DISTANCE_INCHES = 12.0
 FOLLOW_DISTANCE_QUERY_TIMEOUT_SECONDS = 0.75
 FOLLOW_LOST_TARGET_TIMEOUT_SECONDS = 1.5
-FOLLOW_REACQUIRE_SETTLE_SECONDS = 0.3
+FOLLOW_REACQUIRE_SETTLE_SECONDS = 0.75
 FOLLOW_CONFIDENCE_THRESHOLD = 0.90
 FOLLOW_CAMERA_INDEX = 0
 FOLLOW_TARGET_LABEL = "person"
@@ -465,6 +465,20 @@ def run_follow_mode(send_payload, get_current_servo_angle, read_distance_inches,
             f" offset_ratio={offset_ratio:.2f}"
             f" distance_inches={distance_inches if distance_inches is not None else 'unknown'}"
         )
+
+        current_servo_angle = get_current_servo_angle()
+        servo_error = current_servo_angle - FOLLOW_SERVO_CENTER_ANGLE
+        if abs(servo_error) > FOLLOW_SERVO_ALIGN_DEADZONE_DEGREES:
+            turn_payload = f"SL{FOLLOW_TURN_BURST_MS}" if servo_error > 0 else f"SR{FOLLOW_TURN_BURST_MS}"
+            print(
+                f"[Follow] Servo at {current_servo_angle}; "
+                f"spinning base with {turn_payload} to realign before moving."
+            )
+            send_payload(turn_payload)
+            time.sleep((FOLLOW_TURN_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
+            send_payload("LOOK_CENTER")
+            time.sleep(0.15)
+            continue
 
         send_payload("LOOK_CENTER")
         time.sleep(0.1)
