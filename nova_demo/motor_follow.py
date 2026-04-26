@@ -57,6 +57,18 @@ FOLLOW_CENTER_DEADZONE_RATIO = 0.12
 FOLLOW_STOP_DISTANCE_INCHES = 12.0
 FOLLOW_DISTANCE_QUERY_TIMEOUT_SECONDS = 0.75
 FOLLOW_LOST_TARGET_TIMEOUT_SECONDS = 1.5
+FOLLOW_REACQUIRE_SETTLE_SECONDS = 0.3
+FOLLOW_SCAN_ANGLES = (
+    FOLLOW_SERVO_CENTER_ANGLE,
+    120,
+    FOLLOW_SERVO_LEFT_ANGLE,
+    120,
+    FOLLOW_SERVO_CENTER_ANGLE,
+    60,
+    FOLLOW_SERVO_RIGHT_ANGLE,
+    60,
+    FOLLOW_SERVO_CENTER_ANGLE,
+)
 FOLLOW_CONFIDENCE_THRESHOLD = 0.90
 FOLLOW_CAMERA_INDEX = 0
 FOLLOW_TARGET_LABEL = "person"
@@ -407,7 +419,8 @@ def annotate_follow_frame(frame, detection: Detection | None, status_text: str) 
 
 def run_follow_mode(send_payload, get_current_servo_angle, read_distance_inches, tracker: TrackedPersonMonitor) -> None:
     """Follow the person already in frame instead of rotating to search for one."""
-    last_detection_time = 1.0
+    last_detection_time = time.monotonic()
+    scan_index = 0
     print("[Follow] Entered follow mode")
     initial_detection, initial_width, initial_height = tracker.get_snapshot()
     if initial_detection is None or initial_width <= 0 or initial_height <= 0:
@@ -423,19 +436,28 @@ def run_follow_mode(send_payload, get_current_servo_angle, read_distance_inches,
     while True:
         detection, frame_width, frame_height = tracker.get_snapshot()
         now = time.monotonic()
+        distance_inches = read_distance_inches()
+
+        if distance_inches is not None and distance_inches <= FOLLOW_STOP_DISTANCE_INCHES:
+            print(f"[Follow] Reached stop distance ({distance_inches:.1f} in). Stopping.")
+            send_payload("X")
+            break
 
         if detection is None:
             if last_detection_time and (now - last_detection_time) >= FOLLOW_LOST_TARGET_TIMEOUT_SECONDS:
-                print("[Follow] Lost person target. Stopping follow mode.")
-                send_payload("X")
-                break
+                target_angle = FOLLOW_SCAN_ANGLES[scan_index % len(FOLLOW_SCAN_ANGLES)]
+                scan_index += 1
+                print(f"[Follow] Lost person target. Scanning at servo angle {target_angle}.")
+                send_payload(f"SV{target_angle}")
+                time.sleep(FOLLOW_REACQUIRE_SETTLE_SECONDS)
+                continue
             time.sleep(0.1)
             continue
 
         last_detection_time = now
+        scan_index = 0
 
         offset_ratio = (detection.center_x - (frame_width / 2.0)) / max(frame_width, 1)
-        distance_inches = read_distance_inches()
 
         print(
             "[Follow] person"
@@ -443,11 +465,6 @@ def run_follow_mode(send_payload, get_current_servo_angle, read_distance_inches,
             f" offset_ratio={offset_ratio:.2f}"
             f" distance_inches={distance_inches if distance_inches is not None else 'unknown'}"
         )
-
-        if distance_inches is not None and distance_inches <= FOLLOW_STOP_DISTANCE_INCHES:
-            print(f"[Follow] Reached stop distance ({distance_inches:.1f} in). Stopping.")
-            send_payload("X")
-            break
 
         send_payload("LOOK_CENTER")
         time.sleep(0.1)
