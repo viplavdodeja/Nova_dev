@@ -417,16 +417,6 @@ def run_follow_mode(send_payload, get_current_servo_angle, tracker: TrackedPerso
     locked_servo_angle = get_current_servo_angle()
     print(f"[Follow] Starting from tracked servo angle: {locked_servo_angle}")
 
-    servo_offset = locked_servo_angle - FOLLOW_SERVO_CENTER_ANGLE
-    if abs(servo_offset) > FOLLOW_SERVO_ALIGN_DEADZONE_DEGREES:
-        turn_payload = f"SL{FOLLOW_TURN_BURST_MS}" if servo_offset > 0 else f"SR{FOLLOW_TURN_BURST_MS}"
-        turn_steps = max(1, int(round(abs(servo_offset) / FOLLOW_INITIAL_ALIGN_STEP_DEGREES)))
-        turn_steps = min(turn_steps, 4)
-        print(f"[Follow] Coarse base-align with {turn_steps} x {turn_payload}")
-        for _ in range(turn_steps):
-            send_payload(turn_payload)
-            time.sleep((FOLLOW_TURN_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
-
     send_payload("LOOK_CENTER")
     time.sleep(0.3)
 
@@ -444,28 +434,17 @@ def run_follow_mode(send_payload, get_current_servo_angle, tracker: TrackedPerso
 
         last_detection_time = now
 
-        midpoint = frame_width / 2.0
-        offset = detection.center_x - midpoint
-        deadzone_half_width = (frame_width * FOLLOW_CENTER_DEADZONE_RATIO) / 2.0
         width_ratio = detection.width / max(frame_width, 1)
         height_ratio = detection.height / max(frame_height, 1)
+        offset_ratio = (detection.center_x - (frame_width / 2.0)) / max(frame_width, 1)
 
         print(
             "[Follow] person"
             f" conf={detection.confidence:.2f}"
-            f" offset={offset:.1f}"
+            f" offset_ratio={offset_ratio:.2f}"
             f" width_ratio={width_ratio:.2f}"
             f" height_ratio={height_ratio:.2f}"
         )
-
-        if abs(offset) > deadzone_half_width:
-            turn_payload = f"SL{FOLLOW_TURN_BURST_MS}" if offset < 0 else f"SR{FOLLOW_TURN_BURST_MS}"
-            print(f"[Follow] Spinning base with {turn_payload}")
-            send_payload("LOOK_CENTER")
-            time.sleep(0.1)
-            send_payload(turn_payload)
-            time.sleep((FOLLOW_TURN_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
-            continue
 
         if width_ratio >= FOLLOW_STOP_WIDTH_RATIO or height_ratio >= FOLLOW_STOP_HEIGHT_RATIO:
             print("[Follow] Reached close-enough distance. Stopping.")
