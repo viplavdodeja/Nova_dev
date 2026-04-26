@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -20,10 +21,25 @@ from nova_testing.nova_server.client.nova_server_client import (  # noqa: E402
 from nova_testing.speech import speak_text  # noqa: E402
 
 MOTOR_DIR = NOVA_TESTING_DIR / "motor_voice_control"
-sys.path.insert(0, str(MOTOR_DIR))
 
-from motor_serial import MotorController  # noqa: E402
-from config import BAUD_RATE, SERIAL_PORT, SERIAL_TIMEOUT_SECONDS  # noqa: E402
+
+def _load_module(module_name: str, file_path: Path):
+    """Load a module directly from a file path to avoid config name collisions."""
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load module {module_name} from {file_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+motor_serial_module = _load_module("nova_motor_serial_test", MOTOR_DIR / "motor_serial.py")
+motor_config_module = _load_module("nova_motor_config_test", MOTOR_DIR / "config.py")
+
+MotorController = motor_serial_module.MotorController
+BAUD_RATE = motor_config_module.BAUD_RATE
+SERIAL_PORT = motor_config_module.SERIAL_PORT
+SERIAL_TIMEOUT_SECONDS = motor_config_module.SERIAL_TIMEOUT_SECONDS
 
 try:
     import cv2  # noqa: E402
