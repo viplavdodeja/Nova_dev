@@ -11,7 +11,6 @@ REPO_ROOT = NOVA_TESTING_DIR.parent
 
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(NOVA_TESTING_DIR))
-sys.path.insert(0, str(NOVA_TESTING_DIR / "motor_voice_control"))
 
 from nova_testing.config import CAMERA_INDEX, CV_CONFIDENCE_THRESHOLD, YOLO_MODEL_PATH  # noqa: E402
 from nova_testing.nova_server.client.nova_server_client import (  # noqa: E402
@@ -19,6 +18,10 @@ from nova_testing.nova_server.client.nova_server_client import (  # noqa: E402
     check_server_health,
 )
 from nova_testing.speech import speak_text  # noqa: E402
+
+MOTOR_DIR = NOVA_TESTING_DIR / "motor_voice_control"
+sys.path.insert(0, str(MOTOR_DIR))
+
 from motor_serial import MotorController  # noqa: E402
 from config import BAUD_RATE, SERIAL_PORT, SERIAL_TIMEOUT_SECONDS  # noqa: E402
 
