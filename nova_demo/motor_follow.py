@@ -62,6 +62,11 @@ FOLLOW_CONFIDENCE_THRESHOLD = 0.45
 FOLLOW_CAMERA_INDEX = 0
 FOLLOW_TARGET_LABEL = "person"
 FOLLOW_COMMAND_PHRASES = ("follow me",)
+FOLLOW_SERVO_CENTER_ANGLE = 90
+FOLLOW_SERVO_LEFT_ANGLE = 150
+FOLLOW_SERVO_RIGHT_ANGLE = 30
+FOLLOW_SERVO_ALIGN_DEADZONE_DEGREES = 8
+FOLLOW_INITIAL_ALIGN_STEP_DEGREES = 15
 
 PRESET_GREETING_RESPONSES = {
     "good morning": "Good morning",
@@ -195,8 +200,8 @@ def find_best_person_detection(result) -> Detection | None:
     return best
 
 
-def run_follow_mode(send_payload) -> None:
-    """Align to the detected person, then drive forward until close enough."""
+def run_follow_mode(send_payload, get_current_servo_angle) -> None:
+    """Align to the already locked person, then drive forward until close enough."""
     if cv2 is None or YOLO is None:
         print("[Follow] opencv-python and ultralytics are required.")
         return
@@ -216,7 +221,19 @@ def run_follow_mode(send_payload) -> None:
 
     last_detection_time = 0.0
     print("[Follow] Entered follow mode")
-    print("[Follow] Centering servo and searching for person")
+    locked_servo_angle = get_current_servo_angle()
+    print(f"[Follow] Starting from tracked servo angle: {locked_servo_angle}")
+
+    servo_offset = locked_servo_angle - FOLLOW_SERVO_CENTER_ANGLE
+    if abs(servo_offset) > FOLLOW_SERVO_ALIGN_DEADZONE_DEGREES:
+        turn_payload = f"L{FOLLOW_TURN_BURST_MS}" if servo_offset > 0 else f"R{FOLLOW_TURN_BURST_MS}"
+        turn_steps = max(1, int(round(abs(servo_offset) / FOLLOW_INITIAL_ALIGN_STEP_DEGREES)))
+        turn_steps = min(turn_steps, 4)
+        print(f"[Follow] Coarse base-align with {turn_steps} x {turn_payload}")
+        for _ in range(turn_steps):
+            send_payload(turn_payload)
+            time.sleep((FOLLOW_TURN_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
+
     send_payload("LOOK_CENTER")
     time.sleep(0.3)
 
@@ -265,13 +282,13 @@ def run_follow_mode(send_payload) -> None:
                 time.sleep((FOLLOW_TURN_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
                 continue
 
-            send_payload("LOOK_CENTER")
-            time.sleep(0.1)
-
             if width_ratio >= FOLLOW_STOP_WIDTH_RATIO or height_ratio >= FOLLOW_STOP_HEIGHT_RATIO:
                 print("[Follow] Reached close-enough distance. Stopping.")
                 send_payload("X")
                 break
+
+            send_payload("LOOK_CENTER")
+            time.sleep(0.1)
 
             print(f"[Follow] Advancing with F{FOLLOW_FORWARD_BURST_MS}")
             send_payload(f"F{FOLLOW_FORWARD_BURST_MS}")
@@ -300,8 +317,21 @@ def run() -> None:
         listener.stop()
         return
     serial_lock = threading.Lock()
+    current_servo_angle = {"value": FOLLOW_SERVO_CENTER_ANGLE}
 
     def send_payload(payload: str) -> bool:
+        stripped = payload.strip().upper()
+        if stripped == "LOOK_LEFT":
+            current_servo_angle["value"] = FOLLOW_SERVO_LEFT_ANGLE
+        elif stripped == "LOOK_RIGHT":
+            current_servo_angle["value"] = FOLLOW_SERVO_RIGHT_ANGLE
+        elif stripped == "LOOK_CENTER":
+            current_servo_angle["value"] = FOLLOW_SERVO_CENTER_ANGLE
+        elif stripped.startswith("SV"):
+            try:
+                current_servo_angle["value"] = int(stripped[2:])
+            except ValueError:
+                pass
         with serial_lock:
             return motor.send_message(payload)
 
@@ -379,7 +409,7 @@ def run() -> None:
                         print(f"Follow command recognized: {follow_phrase}")
                         tracker.stop()
                         try:
-                            run_follow_mode(send_payload)
+                            run_follow_mode(send_payload, get_current_servo_angle)
                         finally:
                             tracker = ServoPersonTracker(
                                 send_payload=send_payload,
@@ -421,3 +451,5 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
+    def get_current_servo_angle() -> int:
+        return current_servo_angle["value"]
