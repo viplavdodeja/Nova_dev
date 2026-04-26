@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 import serial
 from serial.tools import list_ports
@@ -103,6 +104,55 @@ class MotorController:
         except Exception as exc:
             print(f"Serial write error: {exc}")
             return False
+
+    def read_message(self) -> str | None:
+        """Read a single serial line if available."""
+        if self._serial_connection is None or not self._serial_connection.is_open:
+            print("Serial read failed: not connected")
+            return None
+
+        try:
+            raw = self._serial_connection.readline()
+        except Exception as exc:
+            print(f"Serial read error: {exc}")
+            return None
+
+        if not raw:
+            return None
+
+        try:
+            return raw.decode("utf-8", errors="replace").strip()
+        except Exception:
+            return None
+
+    def request_message(
+        self,
+        message: str,
+        *,
+        expected_prefix: str | None = None,
+        max_wait_seconds: float = 1.0,
+    ) -> str | None:
+        """Send a message and wait for a matching response line."""
+        if self._serial_connection is None or not self._serial_connection.is_open:
+            print("Serial request failed: not connected")
+            return None
+
+        try:
+            self._serial_connection.reset_input_buffer()
+        except Exception:
+            pass
+
+        if not self.send_message(message):
+            return None
+
+        deadline = time.monotonic() + max_wait_seconds
+        while time.monotonic() < deadline:
+            response = self.read_message()
+            if not response:
+                continue
+            if expected_prefix is None or response.startswith(expected_prefix):
+                return response
+        return None
 
     def set_led_state(self, led_state: str) -> bool:
         """Send LED state token to Arduino."""

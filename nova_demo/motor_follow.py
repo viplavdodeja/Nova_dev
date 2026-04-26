@@ -54,8 +54,8 @@ FOLLOW_TURN_BURST_MS = 220
 FOLLOW_FORWARD_BURST_MS = 280
 FOLLOW_SETTLE_SECONDS = 0.35
 FOLLOW_CENTER_DEADZONE_RATIO = 0.12
-FOLLOW_STOP_WIDTH_RATIO = 0.38
-FOLLOW_STOP_HEIGHT_RATIO = 0.55
+FOLLOW_STOP_DISTANCE_INCHES = 12.0
+FOLLOW_DISTANCE_QUERY_TIMEOUT_SECONDS = 0.75
 FOLLOW_LOST_TARGET_TIMEOUT_SECONDS = 1.5
 FOLLOW_CONFIDENCE_THRESHOLD = 0.90
 FOLLOW_CAMERA_INDEX = 0
@@ -405,7 +405,7 @@ def annotate_follow_frame(frame, detection: Detection | None, status_text: str) 
     cv2.putText(frame, label_text, (x1, max(y1 - 8, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
 
 
-def run_follow_mode(send_payload, get_current_servo_angle, tracker: TrackedPersonMonitor) -> None:
+def run_follow_mode(send_payload, get_current_servo_angle, read_distance_inches, tracker: TrackedPersonMonitor) -> None:
     """Follow the person already in frame instead of rotating to search for one."""
     last_detection_time = 1.0
     print("[Follow] Entered follow mode")
@@ -434,20 +434,18 @@ def run_follow_mode(send_payload, get_current_servo_angle, tracker: TrackedPerso
 
         last_detection_time = now
 
-        width_ratio = detection.width / max(frame_width, 1)
-        height_ratio = detection.height / max(frame_height, 1)
         offset_ratio = (detection.center_x - (frame_width / 2.0)) / max(frame_width, 1)
+        distance_inches = read_distance_inches()
 
         print(
             "[Follow] person"
             f" conf={detection.confidence:.2f}"
             f" offset_ratio={offset_ratio:.2f}"
-            f" width_ratio={width_ratio:.2f}"
-            f" height_ratio={height_ratio:.2f}"
+            f" distance_inches={distance_inches if distance_inches is not None else 'unknown'}"
         )
 
-        if width_ratio >= FOLLOW_STOP_WIDTH_RATIO or height_ratio >= FOLLOW_STOP_HEIGHT_RATIO:
-            print("[Follow] Reached close-enough distance. Stopping.")
+        if distance_inches is not None and distance_inches <= FOLLOW_STOP_DISTANCE_INCHES:
+            print(f"[Follow] Reached stop distance ({distance_inches:.1f} in). Stopping.")
             send_payload("X")
             break
 
@@ -508,6 +506,33 @@ def run() -> None:
 
     def get_current_servo_angle() -> int:
         return current_servo_angle["value"]
+
+    def read_distance_inches() -> float | None:
+        with serial_lock:
+            response = motor.request_message(
+                "DIST",
+                expected_prefix="DIST",
+                max_wait_seconds=FOLLOW_DISTANCE_QUERY_TIMEOUT_SECONDS,
+            )
+        if not response:
+            print("[Follow] Ultrasonic distance query timed out")
+            return None
+
+        parts = response.split(maxsplit=1)
+        if len(parts) != 2:
+            print(f"[Follow] Unexpected distance response: {response}")
+            return None
+
+        value = parts[1].strip()
+        if value.upper() == "ERR":
+            print("[Follow] Ultrasonic distance read failed")
+            return None
+
+        try:
+            return float(value)
+        except ValueError:
+            print(f"[Follow] Invalid distance value: {response}")
+            return None
 
     yolo_model_path = NOVA_TESTING_DIR.parent / "yolo11n.pt"
     tracker = TrackedPersonMonitor(
@@ -574,7 +599,7 @@ def run() -> None:
                     if follow_phrase is not None:
                         print(f"Follow command recognized: {follow_phrase}")
                         try:
-                            run_follow_mode(send_payload, get_current_servo_angle, tracker)
+                            run_follow_mode(send_payload, get_current_servo_angle, read_distance_inches, tracker)
                         finally:
                             tracker.resume()
                         send_led(LED_IDLE)
