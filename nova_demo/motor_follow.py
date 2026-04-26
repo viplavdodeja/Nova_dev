@@ -35,7 +35,6 @@ from config import (  # noqa: E402
     WAKE_REQUIRED_HITS,
 )
 from motor_serial import MotorController  # noqa: E402
-from servo_tracking import ServoPersonTracker  # noqa: E402
 from motor_voice_streaming import ContinuousVoskListener  # noqa: E402
 
 try:
@@ -68,6 +67,12 @@ FOLLOW_SERVO_RIGHT_ANGLE = 30
 FOLLOW_SERVO_ALIGN_DEADZONE_DEGREES = 8
 FOLLOW_INITIAL_ALIGN_STEP_DEGREES = 15
 FOLLOW_SHOW_WINDOW = True
+FOLLOW_WINDOW_NAME = "Nova Follow"
+TRACKER_DEADZONE_RATIO = 0.2
+TRACKER_SMALL_STEP = 7
+TRACKER_LARGE_STEP = 15
+TRACKER_COMMAND_COOLDOWN = 0.2
+TRACKER_CONFIRM_FRAMES = 2
 
 PRESET_GREETING_RESPONSES = {
     "good morning": "Good morning",
@@ -87,6 +92,156 @@ class Detection:
     @property
     def area(self) -> float:
         return self.width * self.height
+
+
+class TrackedPersonMonitor:
+    """Background person tracker with always-on preview window."""
+
+    def __init__(self, send_payload, model_path: str) -> None:
+        self._send_payload = send_payload
+        self._model_path = model_path
+        self._stop_event = threading.Event()
+        self._pause_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._current_angle = FOLLOW_SERVO_CENTER_ANGLE
+        self._state_lock = threading.Lock()
+        self._current_detection: Detection | None = None
+        self._frame_width = 0
+        self._frame_height = 0
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._pause_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True, name="motor-follow-tracker")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+
+    def pause(self) -> None:
+        self._pause_event.set()
+
+    def resume(self) -> None:
+        self._pause_event.clear()
+
+    def get_snapshot(self) -> tuple[Detection | None, int, int]:
+        with self._state_lock:
+            return self._current_detection, self._frame_width, self._frame_height
+
+    def _run(self) -> None:
+        if cv2 is None or YOLO is None:
+            print("[FollowTracker] opencv-python and ultralytics are required; tracking disabled.")
+            return
+
+        try:
+            model = YOLO(self._model_path)
+        except Exception as exc:
+            print(f"[FollowTracker] Could not load YOLO model: {exc}")
+            return
+
+        capture = cv2.VideoCapture(FOLLOW_CAMERA_INDEX)
+        if not capture.isOpened():
+            capture.release()
+            print("[FollowTracker] Could not open camera; tracking disabled.")
+            return
+
+        last_command_time = 0.0
+        candidate_adjustment = 0
+        candidate_frames = 0
+
+        try:
+            self._send_angle(self._current_angle)
+            while not self._stop_event.is_set():
+                ok, frame = capture.read()
+                if not ok or frame is None:
+                    time.sleep(0.05)
+                    continue
+
+                results = model(frame, verbose=False)
+                detection = find_best_person_detection(results[0]) if results else None
+
+                frame_height, frame_width = frame.shape[:2]
+                with self._state_lock:
+                    self._current_detection = detection
+                    self._frame_width = frame_width
+                    self._frame_height = frame_height
+
+                status_text = "Tracking paused" if self._pause_event.is_set() else "Tracking active"
+                if FOLLOW_SHOW_WINDOW and cv2 is not None:
+                    preview = frame.copy()
+                    annotate_follow_frame(preview, detection, status_text)
+                    cv2.imshow(FOLLOW_WINDOW_NAME, preview)
+                    if (cv2.waitKey(1) & 0xFF) == ord("q"):
+                        self._stop_event.set()
+                        break
+
+                if self._pause_event.is_set():
+                    time.sleep(0.05)
+                    continue
+
+                if detection is None:
+                    candidate_adjustment = 0
+                    candidate_frames = 0
+                    time.sleep(0.05)
+                    continue
+
+                raw_adjustment = compute_servo_adjustment(frame_width, detection.center_x)
+                if raw_adjustment == 0:
+                    candidate_adjustment = 0
+                    candidate_frames = 0
+                    time.sleep(0.05)
+                    continue
+
+                direction = 1 if raw_adjustment > 0 else -1
+                if direction == candidate_adjustment:
+                    candidate_frames += 1
+                else:
+                    candidate_adjustment = direction
+                    candidate_frames = 1
+
+                if candidate_frames < TRACKER_CONFIRM_FRAMES:
+                    time.sleep(0.05)
+                    continue
+
+                now = time.monotonic()
+                if (now - last_command_time) < TRACKER_COMMAND_COOLDOWN:
+                    time.sleep(0.05)
+                    continue
+
+                new_angle = self._current_angle + raw_adjustment
+                new_angle = max(min(new_angle, FOLLOW_SERVO_LEFT_ANGLE + 10), FOLLOW_SERVO_RIGHT_ANGLE - 10)
+                if new_angle != self._current_angle:
+                    self._send_angle(new_angle)
+                    self._current_angle = new_angle
+                    last_command_time = now
+                candidate_adjustment = 0
+                candidate_frames = 0
+                time.sleep(0.05)
+        finally:
+            capture.release()
+            if FOLLOW_SHOW_WINDOW and cv2 is not None:
+                cv2.destroyWindow(FOLLOW_WINDOW_NAME)
+
+    def _send_angle(self, angle: int) -> None:
+        self._send_payload(f"SV{angle}")
+
+
+def compute_servo_adjustment(frame_width: int, center_x: float) -> int:
+    midpoint = frame_width / 2.0
+    offset = center_x - midpoint
+    deadzone_half_width = (frame_width * TRACKER_DEADZONE_RATIO) / 2.0
+    large_error_threshold = frame_width * 0.25
+
+    if abs(offset) <= deadzone_half_width:
+        return 0
+
+    step = TRACKER_LARGE_STEP if abs(offset) >= large_error_threshold else TRACKER_SMALL_STEP
+    return -step if offset > 0 else step
 
 
 def _load_root_speech_module():
@@ -228,7 +383,15 @@ def annotate_follow_frame(frame, detection: Detection | None, status_text: str) 
     cv2.putText(frame, status_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (50, 220, 50), 2)
 
     if detection is None:
-        cv2.putText(frame, "No person >= 0.90 confidence", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (30, 30, 255), 2)
+        cv2.putText(
+            frame,
+            f"No person >= {FOLLOW_CONFIDENCE_THRESHOLD:.2f} confidence",
+            (10, 55),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (30, 30, 255),
+            2,
+        )
         return
 
     half_width = detection.width / 2.0
@@ -242,33 +405,21 @@ def annotate_follow_frame(frame, detection: Detection | None, status_text: str) 
     cv2.putText(frame, label_text, (x1, max(y1 - 8, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
 
 
-def run_follow_mode(send_payload, get_current_servo_angle) -> None:
-    """Align to the already locked person, then drive forward until close enough."""
-    if cv2 is None or YOLO is None:
-        print("[Follow] opencv-python and ultralytics are required.")
-        return
-
-    model_path = NOVA_TESTING_DIR.parent / "yolo11n.pt"
-    try:
-        model = YOLO(str(model_path) if model_path.exists() else "yolo11n.pt")
-    except Exception as exc:
-        print(f"[Follow] Could not load YOLO model: {exc}")
-        return
-
-    capture = cv2.VideoCapture(FOLLOW_CAMERA_INDEX)
-    if not capture.isOpened():
-        capture.release()
-        print("[Follow] Could not open camera.")
-        return
-
+def run_follow_mode(send_payload, get_current_servo_angle, tracker: TrackedPersonMonitor) -> None:
+    """Follow the person already in frame instead of rotating to search for one."""
     last_detection_time = 0.0
     print("[Follow] Entered follow mode")
+    initial_detection, initial_width, initial_height = tracker.get_snapshot()
+    if initial_detection is None or initial_width <= 0 or initial_height <= 0:
+        print("[Follow] No person currently in frame. Aborting follow mode.")
+        return
+
     locked_servo_angle = get_current_servo_angle()
     print(f"[Follow] Starting from tracked servo angle: {locked_servo_angle}")
 
     servo_offset = locked_servo_angle - FOLLOW_SERVO_CENTER_ANGLE
     if abs(servo_offset) > FOLLOW_SERVO_ALIGN_DEADZONE_DEGREES:
-        turn_payload = f"L{FOLLOW_TURN_BURST_MS}" if servo_offset > 0 else f"R{FOLLOW_TURN_BURST_MS}"
+        turn_payload = f"SL{FOLLOW_TURN_BURST_MS}" if servo_offset > 0 else f"SR{FOLLOW_TURN_BURST_MS}"
         turn_steps = max(1, int(round(abs(servo_offset) / FOLLOW_INITIAL_ALIGN_STEP_DEGREES)))
         turn_steps = min(turn_steps, 4)
         print(f"[Follow] Coarse base-align with {turn_steps} x {turn_payload}")
@@ -279,88 +430,56 @@ def run_follow_mode(send_payload, get_current_servo_angle) -> None:
     send_payload("LOOK_CENTER")
     time.sleep(0.3)
 
-    try:
-        while True:
-            ok, frame = capture.read()
-            if not ok or frame is None:
-                time.sleep(0.1)
-                continue
+    while True:
+        detection, frame_width, frame_height = tracker.get_snapshot()
+        now = time.monotonic()
 
-            results = model(frame, verbose=False)
-            detection = find_best_person_detection(results[0]) if results else None
-            now = time.monotonic()
-
-            if detection is None:
-                if FOLLOW_SHOW_WINDOW and cv2 is not None:
-                    preview = frame.copy()
-                    annotate_follow_frame(preview, None, "Follow: target lost")
-                    cv2.imshow("Nova Follow", preview)
-                    if (cv2.waitKey(1) & 0xFF) == ord("q"):
-                        print("[Follow] Window closed by user.")
-                        send_payload("X")
-                        break
-                if last_detection_time and (now - last_detection_time) >= FOLLOW_LOST_TARGET_TIMEOUT_SECONDS:
-                    print("[Follow] Lost person target. Stopping follow mode.")
-                    send_payload("X")
-                    break
-                time.sleep(0.1)
-                continue
-
-            last_detection_time = now
-
-            frame_height, frame_width = frame.shape[:2]
-            midpoint = frame_width / 2.0
-            offset = detection.center_x - midpoint
-            deadzone_half_width = (frame_width * FOLLOW_CENTER_DEADZONE_RATIO) / 2.0
-            width_ratio = detection.width / max(frame_width, 1)
-            height_ratio = detection.height / max(frame_height, 1)
-
-            print(
-                "[Follow] person"
-                f" conf={detection.confidence:.2f}"
-                f" offset={offset:.1f}"
-                f" width_ratio={width_ratio:.2f}"
-                f" height_ratio={height_ratio:.2f}"
-            )
-
-            status_text = (
-                f"Follow conf={detection.confidence:.2f} "
-                f"off={offset:.0f} w={width_ratio:.2f} h={height_ratio:.2f}"
-            )
-            if FOLLOW_SHOW_WINDOW and cv2 is not None:
-                preview = frame.copy()
-                annotate_follow_frame(preview, detection, status_text)
-                cv2.imshow("Nova Follow", preview)
-                if (cv2.waitKey(1) & 0xFF) == ord("q"):
-                    print("[Follow] Window closed by user.")
-                    send_payload("X")
-                    break
-
-            if abs(offset) > deadzone_half_width:
-                turn_payload = f"L{FOLLOW_TURN_BURST_MS}" if offset < 0 else f"R{FOLLOW_TURN_BURST_MS}"
-                print(f"[Follow] Aligning base with {turn_payload}")
-                send_payload("LOOK_CENTER")
-                time.sleep(0.1)
-                send_payload(turn_payload)
-                time.sleep((FOLLOW_TURN_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
-                continue
-
-            if width_ratio >= FOLLOW_STOP_WIDTH_RATIO or height_ratio >= FOLLOW_STOP_HEIGHT_RATIO:
-                print("[Follow] Reached close-enough distance. Stopping.")
+        if detection is None:
+            if last_detection_time and (now - last_detection_time) >= FOLLOW_LOST_TARGET_TIMEOUT_SECONDS:
+                print("[Follow] Lost person target. Stopping follow mode.")
                 send_payload("X")
                 break
+            time.sleep(0.1)
+            continue
 
+        last_detection_time = now
+
+        midpoint = frame_width / 2.0
+        offset = detection.center_x - midpoint
+        deadzone_half_width = (frame_width * FOLLOW_CENTER_DEADZONE_RATIO) / 2.0
+        width_ratio = detection.width / max(frame_width, 1)
+        height_ratio = detection.height / max(frame_height, 1)
+
+        print(
+            "[Follow] person"
+            f" conf={detection.confidence:.2f}"
+            f" offset={offset:.1f}"
+            f" width_ratio={width_ratio:.2f}"
+            f" height_ratio={height_ratio:.2f}"
+        )
+
+        if abs(offset) > deadzone_half_width:
+            turn_payload = f"SL{FOLLOW_TURN_BURST_MS}" if offset < 0 else f"SR{FOLLOW_TURN_BURST_MS}"
+            print(f"[Follow] Spinning base with {turn_payload}")
             send_payload("LOOK_CENTER")
             time.sleep(0.1)
+            send_payload(turn_payload)
+            time.sleep((FOLLOW_TURN_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
+            continue
 
-            print(f"[Follow] Advancing with F{FOLLOW_FORWARD_BURST_MS}")
-            send_payload(f"F{FOLLOW_FORWARD_BURST_MS}")
-            time.sleep((FOLLOW_FORWARD_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
-    finally:
-        capture.release()
-        if FOLLOW_SHOW_WINDOW and cv2 is not None:
-            cv2.destroyWindow("Nova Follow")
+        if width_ratio >= FOLLOW_STOP_WIDTH_RATIO or height_ratio >= FOLLOW_STOP_HEIGHT_RATIO:
+            print("[Follow] Reached close-enough distance. Stopping.")
+            send_payload("X")
+            break
+
         send_payload("LOOK_CENTER")
+        time.sleep(0.1)
+
+        print(f"[Follow] Advancing with F{FOLLOW_FORWARD_BURST_MS}")
+        send_payload(f"F{FOLLOW_FORWARD_BURST_MS}")
+        time.sleep((FOLLOW_FORWARD_BURST_MS / 1000.0) + FOLLOW_SETTLE_SECONDS)
+
+    send_payload("LOOK_CENTER")
 
 
 def run() -> None:
@@ -412,7 +531,7 @@ def run() -> None:
         return current_servo_angle["value"]
 
     yolo_model_path = NOVA_TESTING_DIR.parent / "yolo11n.pt"
-    tracker = ServoPersonTracker(
+    tracker = TrackedPersonMonitor(
         send_payload=send_payload,
         model_path=str(yolo_model_path) if yolo_model_path.exists() else "yolo11n.pt",
     )
@@ -475,15 +594,10 @@ def run() -> None:
                     follow_phrase = parse_follow_command(command_text)
                     if follow_phrase is not None:
                         print(f"Follow command recognized: {follow_phrase}")
-                        tracker.stop()
                         try:
-                            run_follow_mode(send_payload, get_current_servo_angle)
+                            run_follow_mode(send_payload, get_current_servo_angle, tracker)
                         finally:
-                            tracker = ServoPersonTracker(
-                                send_payload=send_payload,
-                                model_path=str(yolo_model_path) if yolo_model_path.exists() else "yolo11n.pt",
-                            )
-                            tracker.start()
+                            tracker.resume()
                         send_led(LED_IDLE)
                         previous_passive_text = ""
                         continue
