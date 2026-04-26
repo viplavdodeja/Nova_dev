@@ -21,6 +21,7 @@ HELP_TEXT = """Commands:
   SL1000, SR1000
   LOOK_LEFT, LOOK_RIGHT, LOOK_CENTER
   SV30, SV90, SV150
+  DIST
   LED_READY, LED_LISTEN, LED_MOVE, LED_ERROR
   help
   quit
@@ -58,6 +59,11 @@ def main() -> None:
                 break
             if lowered in {"help", "?"}:
                 print(HELP_TEXT)
+                continue
+
+            if command.strip().upper() == "DIST":
+                response = motor.request_message("DIST", expected_prefix="DIST", max_wait_seconds=1.0)
+                print(f"arduino> {response if response else '<no response>'}")
                 continue
 
             motor.send_message(command)
