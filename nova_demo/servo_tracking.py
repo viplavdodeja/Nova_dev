@@ -47,6 +47,18 @@ class Detection:
         return self.width * self.height
 
 
+@dataclass(slots=True)
+class DetectionSnapshot:
+    label: str
+    confidence: float
+    center_x: float
+    center_y: float
+    width: float
+    height: float
+    frame_width: int
+    frame_height: int
+
+
 class ServoPersonTracker:
     """Run track_and_pan-style person tracking against a shared serial sender."""
 
@@ -87,6 +99,8 @@ class ServoPersonTracker:
         self._pause_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._current_angle = self._clamp_angle(servo_center_angle)
+        self._state_lock = threading.Lock()
+        self._last_detection: DetectionSnapshot | None = None
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -107,6 +121,11 @@ class ServoPersonTracker:
 
     def resume(self) -> None:
         self._pause_event.clear()
+
+    def get_last_detection(self) -> DetectionSnapshot | None:
+        """Return the most recent tracked detection snapshot, if any."""
+        with self._state_lock:
+            return self._last_detection
 
     def _run(self) -> None:
         if cv2 is None or YOLO is None:
@@ -146,6 +165,21 @@ class ServoPersonTracker:
                 best_detection = None
                 if results:
                     best_detection = self._find_best_detection(results[0])
+
+                with self._state_lock:
+                    if best_detection is None:
+                        self._last_detection = None
+                    else:
+                        self._last_detection = DetectionSnapshot(
+                            label=best_detection.label,
+                            confidence=best_detection.confidence,
+                            center_x=best_detection.center_x,
+                            center_y=best_detection.center_y,
+                            width=best_detection.width,
+                            height=best_detection.height,
+                            frame_width=frame.shape[1],
+                            frame_height=frame.shape[0],
+                        )
 
                 if best_detection is not None:
                     raw_adjustment = self._compute_servo_adjustment(frame.shape[1], best_detection.center_x)
