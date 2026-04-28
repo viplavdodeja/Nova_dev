@@ -79,12 +79,18 @@ speak_text = _ROOT_SPEECH.speak_text
 warm_tts = _ROOT_SPEECH.warm_tts
 
 
-def speak_blocking(text: str) -> None:
-    """Speak local TTS output and log failures."""
+def start_speech(text: str) -> threading.Thread | None:
+    """Start local TTS output in the background and return the worker thread."""
     if not text:
-        return
-    if not speak_text(text):
-        print("[ServerDemo] Speech output failed.")
+        return None
+
+    def _speak_worker() -> None:
+        if not speak_text(text):
+            print("[ServerDemo] Speech output failed.")
+
+    worker = threading.Thread(target=_speak_worker, daemon=True, name="server-demo-tts")
+    worker.start()
+    return worker
 
 
 def execute_greeting_sequence(send_payload) -> None:
@@ -257,7 +263,6 @@ def run() -> None:
                     greeting = parse_greeting_command(command_text)
                     if greeting is not None:
                         print(f"Greeting recognized: {greeting}")
-                        execute_greeting_sequence(send_payload)
                         payload = build_server_payload(command_text, greeting, tracker, motor, serial_lock)
                         print("Server payload:")
                         print(payload)
@@ -265,8 +270,10 @@ def run() -> None:
                         print("Server response:")
                         print(response)
                         reply = str(response.get("reply", "")).strip()
-                        if reply:
-                            speak_blocking(reply)
+                        speech_thread = start_speech(reply)
+                        execute_greeting_sequence(send_payload)
+                        if speech_thread is not None:
+                            speech_thread.join()
                         send_led(LED_IDLE)
                         previous_passive_text = ""
                         continue
