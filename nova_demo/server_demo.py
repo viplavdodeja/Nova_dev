@@ -49,6 +49,7 @@ LED_IDLE = "LED_READY"
 LED_COMMAND = "LED_LISTEN"
 SERVER_URL = os.getenv("NOVA_SERVER_URL", "http://127.0.0.1:8080")
 SERVER_REASON_TIMEOUT_LABEL = "server-demo"
+SPEECH_HEAD_START_SECONDS = float(os.getenv("NOVA_SPEECH_HEAD_START_SECONDS", "0.45"))
 
 
 def _load_root_speech_module():
@@ -271,6 +272,8 @@ def run() -> None:
                         print(response)
                         reply = str(response.get("reply", "")).strip()
                         speech_thread = start_speech(reply)
+                        if speech_thread is not None and SPEECH_HEAD_START_SECONDS > 0:
+                            time.sleep(SPEECH_HEAD_START_SECONDS)
                         execute_greeting_sequence(send_payload)
                         if speech_thread is not None:
                             speech_thread.join()
